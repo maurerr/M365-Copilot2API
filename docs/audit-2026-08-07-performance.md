@@ -1,43 +1,42 @@
-# M365-Copilot2API 性能审计报告
+# M365-Copilot2API Performance Audit Report
 
-> 审计时间：2026-08-07
-> 审计方式：只读代码审查。修复状态截至提交 b428075（第一批快赢修复）。
+> Audit date: 2026-08-07
+> Audit method: read-only code review. Fix status current as of commit b428075 (first batch of quick wins).
 
-## Top1. 每请求 5-7 次同步整文件写盘且持全局锁（部分修复）
+## Top1. Each request performs 5-7 synchronous full-file disk writes while holding a global lock (partially fixed)
 
-- **位置**：`internal/auth/keys.go:117`、`internal/web/session_resolver.go:234/268/428`、`internal/web/conversation_manager.go:114`、`internal/web/usage.go:83`、`internal/web/sessions.go:144/158`
-- **问题**：每次请求都会多次对 JSON 存储文件做全量 marshal + 写盘，且全部发生在全局锁临界区内。磁盘延迟直接串行进请求路径，吞吐被钉死；多 key 相互拖慢。
-- **修复状态**：`internal/auth/cache.go`、`session_resolver.go`、`conversation_manager.go`、`sessions.go`、`keys.go`、`settings.go`、`deployments.go`、`admin_security.go` 已改为临时文件 + rename 原子落盘（`internal/web/atomicfile.go`），避免写坏半截文件；但"锁内写盘"本身（性能问题）仍未解决，留待后续：`LastUsedAt` 改为仅内存更新、异步批量落盘。
+- **Location**: `internal/auth/keys.go:117`, `internal/web/session_resolver.go:234/268/428`, `internal/web/conversation_manager.go:114`, `internal/web/usage.go:83`, `internal/web/sessions.go:144/158`
+- **Problem**: Every request performs multiple full marshal + disk-write operations on JSON storage files, all inside the global lock's critical section. Disk latency is serialized directly into the request path, capping throughput; multiple keys slow each other down.
+- **Fix status**: `internal/auth/cache.go`, `session_resolver.go`, `conversation_manager.go`, `sessions.go`, `keys.go`, `settings.go`, `deployments.go`, and `admin_security.go` have been changed to write via a temp file + rename for atomic persistence (`internal/web/atomicfile.go`), avoiding partially-written files. However, the "writing to disk while holding the lock" performance problem itself remains unresolved; planned follow-up: make `LastUsedAt` update in memory only, with asynchronous batch persistence.
 
-## Top2. debug 中间件每 chunk 拷贝 + 全量 unmarshal
+## Top2. Debug middleware copies every chunk and fully unmarshals
 
-- **位置**：`internal/web/debug.go:169-190`（captureWriter 每 chunk 拷贝）、`debug.go:162-168`、`redactBody` 全量 `json.Unmarshal`
-- **问题**：开启 debug 后每个 `/v1/*` 请求缓冲全文并全量 JSON 解析，叠加流式每 chunk 拷贝，CPU 与内存开销大。
-- **修复状态**：未修复（第一批范围外）。建议：debug 默认关闭、限定捕获字节、深度递归脱敏、日志轮转。
+- **Problem**: With debug enabled, every `/v1/*` request buffers the full body and fully parses it as JSON, on top of per-chunk copying during streaming, causing significant CPU and memory overhead.
+- **Fix status**: Not fixed (out of scope for the first batch). Recommendation: disable debug by default, cap captured bytes, apply deep recursive redaction, and rotate logs.
 
-## Top3. 流式拼接 O(n²)（已修复）
+## Top3. O(n²) streaming concatenation (fixed)
 
-- **位置**：`internal/chathub/client.go` 原 `streamedText += d` 逐次字符串拼接
-- **问题**：每次 delta 都重新分配整串，长回复下 O(n²) 拷贝。
-- **修复状态**：已改为 `strings.Builder`（`streamed`），`emitDelta`/`emitSnapshot` 均走 Builder，`streamed.String()` 仅在快照比对时调用。
+- **Location**: `internal/chathub/client.go`, originally `streamedText += d` repeated string concatenation
+- **Problem**: Every delta reallocated the entire string, causing O(n²) copying for long responses.
+- **Fix status**: Changed to use `strings.Builder` (`streamed`); both `emitDelta`/`emitSnapshot` now go through the Builder, and `streamed.String()` is only called when comparing snapshots.
 
-## Top4. WS 读取循环阻塞窗口
+## Top4. WS read loop blocking window
 
-- **位置**：`internal/chathub/client.go` 顶层循环 `ReadMessage` 阻塞达 90s，ctx 取消只在循环顶部检查
-- **问题**：`ReadMessage` 阻塞期间不响应 ctx 取消，最多延迟 90s（读 deadline）才退出。
-- **修复状态**：未修复。建议读 goroutine + select 或 `SetReadDeadline` 与 ctx 联动。
+- **Location**: `internal/chathub/client.go` top-level loop; `ReadMessage` blocks for up to 90s, with ctx cancellation checked only at the top of the loop
+- **Problem**: `ReadMessage` does not respond to ctx cancellation while blocked, delaying exit by up to 90s (the read deadline).
+- **Fix status**: Not fixed. Recommendation: use a read goroutine with `select`, or tie `SetReadDeadline` to ctx.
 
-## Top5. sessionResolver miss 时全量 Jaccard 对比
+## Top5. Full Jaccard comparison on sessionResolver miss
 
-- **位置**：`internal/web/session_resolver.go` 兜底相似度扫描（锁内逐条 tokenize 整个历史）
-- **问题**：上下文未精确命中时对全部 session 逐一算 Jaccard，锁内 O(会话数 × 历史消息量)。
-- **修复状态**：部分缓解——已加 `maxSessions` 上限（默认 1000，LRU 淘汰，`evictLocked` 在 Resolve/Bind 时触发），兜底扫描规模受限；但按 IP 指纹分桶索引的建议未实施。
+- **Location**: `internal/web/session_resolver.go` fallback similarity scan (tokenizes the entire history one entry at a time, inside the lock)
+- **Problem**: When context doesn't hit an exact match, Jaccard similarity is computed against every session individually, inside the lock — O(number of sessions × history message volume).
+- **Fix status**: Partially mitigated — a `maxSessions` cap has been added (default 1000, LRU eviction, `evictLocked` triggered on Resolve/Bind), limiting the scale of the fallback scan. However, the suggestion to bucket by IP fingerprint index has not been implemented.
 
-## 修复优先级（第一批已勾选项打勾）
+## Fix priority (checked items are from the first batch)
 
-1. [x] 原子落盘（M2，Top1 子项）
-2. [x] 流式拼接 O(n²)（Top3）
-3. [x] sessionResolver 条数上限（Top5 缓解）
-4. [ ] 锁内写盘移出临界区（Top1 主体）
-5. [ ] debug 中间件开销（Top2）
-6. [ ] WS 读取 ctx 联动（Top4）
+1. [x] Atomic disk writes (M2, Top1 sub-item)
+2. [x] O(n²) streaming concatenation (Top3)
+3. [x] sessionResolver entry cap (Top5 mitigation)
+4. [ ] Move disk writes out of the lock's critical section (Top1 main issue)
+5. [ ] Debug middleware overhead (Top2)
+6. [ ] WS read ctx integration (Top4)
