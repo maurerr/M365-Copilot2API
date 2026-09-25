@@ -281,6 +281,9 @@ body{background:var(--bg);color:var(--text);font-family:"Inter","SF Pro Display"
 <!-- Login -->
 <div id="login" style="min-height:100vh;display:grid;place-items:center">
   <div style="width:min(400px,calc(100vw - 32px));animation:scaleIn .5s var(--ease-out)">
+    <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+      <select id="loginLanguageSelect" class="form-input" style="width:auto;padding:6px 28px 6px 10px;font-size:12px"><option value="en">English</option><option value="zh-CN">简体中文</option><option value="zh-TW">繁體中文</option><option value="ja">日本語</option><option value="ko">한국어</option><option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="pt-BR">Português (Brasil)</option><option value="ru">Русский</option><option value="ar">العربية</option></select>
+    </div>
     <div style="text-align:center;margin-bottom:24px">
       <div class="logo" style="display:flex;align-items:center;gap:10px;justify-content:center;margin:0 auto 12px;padding:0"><div class="logo-mark" style="width:32px;height:32px"><span></span><span></span><span></span><span></span></div><span style="font-size:24px;font-weight:700;letter-spacing:-0.02em">M365 Copilot2API</span></div>
       <p style="color:var(--muted);font-size:14px;margin-top:4px">Administrator Login</p>
@@ -288,8 +291,8 @@ body{background:var(--bg);color:var(--text);font-family:"Inter","SF Pro Display"
     <form id="loginForm" style="background:var(--surface);-webkit-backdrop-filter:blur(40px) saturate(180%);backdrop-filter:blur(40px) saturate(180%);border:1px solid var(--surface-border);border-radius:var(--radius);padding:32px;box-shadow:var(--shadow-lg)">
       <div class="form-group">
         <label class="form-label">Password</label>
-        <input class="form-input" id="loginPassword" type="password" placeholder="请输入管理员密码（默认：admin123）" autofocus>
-        <div class="form-hint" style="margin-top:4px">默认密码为 <code>admin123</code>，首次登录后需修改密码。</div>
+        <input class="form-input" id="loginPassword" type="password" placeholder="Enter the administrator password (default: admin123)" autofocus>
+        <div class="form-hint" style="margin-top:4px">The default password is <code>admin123</code>. You must change it after your first login.</div>
       </div>
       <button type="submit" class="btn primary" style="width:100%;margin-top:8px">Log in</button>
     </form>
@@ -416,7 +419,7 @@ if (response.output_text) {
           <div class="stat"><span class="stat-label">Tokens saved</span><span class="stat-value" id="stat-saved">0</span><span class="stat-unit" style="font-size:12px">saved</span></div>
         </div>
         <div class="card" id="quotaDashboard" style="display:none">
-          <div class="card-head"><span class="card-title">实时额度</span><span id="quotaSub" style="font-size:11px;color:var(--muted)"></span><button class="btn btn-sm" style="margin-left:auto" onclick="loadAccounts()">刷新</button></div>
+          <div class="card-head"><span class="card-title">Real-time quota</span><span id="quotaSub" style="font-size:11px;color:var(--muted)"></span><button class="btn btn-sm" style="margin-left:auto" onclick="loadAccounts()">Refresh</button></div>
           <div class="card-body">
             <div id="quotaTotals"></div>
             <div id="quotaCooldowns" style="margin-top:16px"></div>
@@ -506,23 +509,23 @@ if (response.output_text) {
               <div class="onb-step">
                 <span class="onb-step-num">1</span>
                 <span class="onb-step-icon"><i data-lucide="mouse-pointer-click" style="width:15px;height:15px"></i></span>
-                <span class="onb-step-text"><b>点击下方"开始授权"</b><p>弹出窗口将打开 Microsoft 登录页面，完成登录后返回此页面。</p></span>
+                <span class="onb-step-text"><b>Click "Start authorization" below</b><p>A popup window will open the Microsoft sign-in page; return to this page after signing in.</p></span>
               </div>
               <div class="onb-step">
                 <span class="onb-step-num">2</span>
                 <span class="onb-step-icon"><i data-lucide="clipboard-copy" style="width:15px;height:15px"></i></span>
-                <span class="onb-step-text"><b>复制弹出页地址栏中的回调地址</b><p>登录后弹出页会显示空白或错误——这是正常的。复制<b>弹出页地址栏</b>的完整网址（包含 <code>code=...</code> 和 <code>state=...</code>）。</p></span>
+                <span class="onb-step-text"><b>Copy the callback URL from the popup's address bar</b><p>After signing in, the popup will show a blank or error page — this is expected. Copy the full URL from the popup's address bar (it includes code=... and state=...).</p></span>
               </div>
               <div class="onb-step">
                 <span class="onb-step-num">3</span>
                 <span class="onb-step-icon"><i data-lucide="check-check" style="width:15px;height:15px"></i></span>
-                <span class="onb-step-text"><b>粘贴并确认</b><p>粘贴到下方"回调地址"输入框，点击"确认添加"完成授权</p></span>
+                <span class="onb-step-text"><b>Paste and confirm</b><p>Paste it into the "Callback URL" field below and click "Confirm and add" to finish authorization</p></span>
               </div>
             </div>
             <button class="btn primary" onclick="startPKCE()" style="width:100%;margin-bottom:12px;"><i data-lucide="link" style="width:15px;height:15px"></i> Start authorization</button>
             <div class="highlight-box warning" style="margin-top:0;margin-bottom:16px">
-              <div class="highlight-box-title"><i data-lucide="alert-circle" style="width:14px;height:14px"></i> 必须手动粘贴回调地址以完成授权</div>
-              <p>在弹出窗口中登录后，页面会显示空白或错误——<strong>这是正常的</strong>，因为回调端点不是真正的网站。授权<strong>尚未</strong>完成。复制弹出页地址栏中的<strong>完整网址</strong>（形如 <code>http://localhost:4141/api/auth/callback?code=M.C5...&state=abc123</code>），粘贴到下方"回调地址"输入框。</p>
+              <div class="highlight-box-title"><i data-lucide="alert-circle" style="width:14px;height:14px"></i> You must manually paste the callback URL to finish authorization</div>
+              <p>After signing in inside the popup window, the page will show a blank or error page — this is expected, because the callback endpoint isn't a real website. Authorization is not yet complete. Copy the full URL from the popup's address bar (it looks like http://localhost:4141/api/auth/callback?code=M.C5...&state=abc123), then paste it into the "Callback URL" field below.</p>
             </div>
             <label class="form-label">Callback URL</label>
             <div class="copy-field">
@@ -610,8 +613,8 @@ if (response.output_text) {
       <!-- Model Test -->
       <section id="page-modeltest" style="display:none">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:12px;flex-wrap:wrap">
-          <div><h2 style="font-size:18px;font-weight:700">Model test</h2><p style="font-size:12px;color:var(--muted);margin-top:2px">支持单账号测试，自动或指定账号</p></div>
-          <div style="display:flex;gap:8px;align-items:center"><select id="modelTestAccount" class="form-input" style="width:200px"><option value="">自动选择账号</option></select><button class="btn primary" onclick="modelTestAll()"><i data-lucide="play" style="width:14px;height:14px"></i> Test all</button></div>
+          <div><h2 style="font-size:18px;font-weight:700">Model test</h2><p style="font-size:12px;color:var(--muted);margin-top:2px">Model test supports testing a single account, either auto-selected or specified.</p></div>
+          <div style="display:flex;gap:8px;align-items:center"><select id="modelTestAccount" class="form-input" style="width:200px"><option value="">Auto-select account</option></select><button class="btn primary" onclick="modelTestAll()"><i data-lucide="play" style="width:14px;height:14px"></i> Test all</button></div>
         </div>
         <div class="card">
           <table class="table"><thead><tr><th>Model</th><th>Status</th><th>Latency</th><th>Reply</th></tr></thead><tbody id="modelTestRows"><tr><td colspan="4" class="empty">Loading...</td></tr></tbody></table>
@@ -631,12 +634,12 @@ if (response.output_text) {
 <div class="modal-overlay" id="keyModal">
   <div class="modal">
     <h3>Create API key</h3>
-    <p class="subtitle">此密钥用于认证 OpenAI / Anthropic 兼容接口的请求。完整密钥仅显示一次——请立即复制保存。创建后可在密钥列表中点击"使用密钥"查看客户端配置示例。</p>
+    <p class="subtitle">This key authenticates requests to the OpenAI / Anthropic-compatible API. The full key is shown only once — copy and save it immediately. After creation, click "Use API key" in the key list to see client configuration examples.</p>
     <form onsubmit="createKey(event)">
       <div class="form-group">
         <label class="form-label">Name</label>
         <input class="form-input" id="keyName" value="default" autofocus>
-        <div class="form-hint">用于标识此密钥的标签（如"my-laptop"、"claude-code"）</div>
+        <div class="form-hint">A label to identify this key (e.g. "my-laptop", "claude-code")</div>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn" onclick="closeKeyModal()">Cancel</button>
@@ -868,7 +871,114 @@ const localeText={
   'Not checked': {'zh-CN':'未检测','zh-TW':'未檢測','ja':'未確認','ko':'확인 안 됨','es':'Sin comprobar','fr':'Non vérifié','de':'Nicht geprüft','pt-BR':'Não verificado','ru':'Не проверено','ar':'لم يتم التحقق'},
   'Cooling down': {'zh-CN':'冷却中','zh-TW':'冷卻中','ja':'クールダウン中','ko':'쿨다운 중','es':'Enfriando','fr':'En attente','de':'Wird abgekühlt','pt-BR':'Resfriando','ru':'Ожидание','ar':'جارٍ التهدئة'},
   'Testing…': {'zh-CN':'测试中…','zh-TW':'測試中…','ja':'テスト中…','ko':'테스트 중…','es':'Probando…','fr':'Test en cours…','de':'Wird getestet…','pt-BR':'Testando…','ru':'Тестирование…','ar':'جارٍ الاختبار…'},
-  'Failed': {'zh-CN':'失败','zh-TW':'失敗','ja':'失敗','ko':'실패','es':'Fallido','fr':'Échec','de':'Fehlgeschlagen','pt-BR':'Falhou','ru':'Ошибка','ar':'فشل'}
+  'Failed': {'zh-CN':'失败','zh-TW':'失敗','ja':'失敗','ko':'실패','es':'Fallido','fr':'Échec','de':'Fehlgeschlagen','pt-BR':'Falhou','ru':'Ошибка','ar':'فشل'},
+  'Enter the administrator password (default: admin123)': {'zh-CN':'请输入管理员密码（默认：admin123）','zh-TW':'請輸入管理員密碼（預設：admin123）'},
+  'The default password is ': {'zh-CN':'默认密码为 ','zh-TW':'預設密碼為 '},
+  '. You must change it after your first login.': {'zh-CN':'，首次登录后需修改密码。','zh-TW':'，首次登入後需修改密碼。'},
+  'Real-time quota': {'zh-CN':'实时额度','zh-TW':'即時額度'},
+  'Refresh': {'zh-CN':'刷新','zh-TW':'重新整理'},
+  'Model test supports testing a single account, either auto-selected or specified.': {'zh-CN':'支持单账号测试，自动或指定账号','zh-TW':'支援單帳號測試，自動或指定帳號'},
+  'Auto-select account': {'zh-CN':'自动选择账号','zh-TW':'自動選擇帳號'},
+  'This key authenticates requests to the OpenAI / Anthropic-compatible API. The full key is shown only once — copy and save it immediately. After creation, click "Use API key" in the key list to see client configuration examples.': {'zh-CN':'此密钥用于认证 OpenAI / Anthropic 兼容接口的请求。完整密钥仅显示一次——请立即复制保存。创建后可在密钥列表中点击"使用密钥"查看客户端配置示例。','zh-TW':'此金鑰用於認證 OpenAI / Anthropic 相容介面的請求。完整金鑰僅顯示一次——請立即複製儲存。建立後可在金鑰列表中點擊「使用金鑰」查看客戶端設定範例。'},
+  'A label to identify this key (e.g. "my-laptop", "claude-code")': {'zh-CN':'用于标识此密钥的标签（如"my-laptop"、"claude-code"）','zh-TW':'用於標識此金鑰的標籤（如「my-laptop」、「claude-code」）'},
+  'curl command copied': {'zh-CN':'curl 已复制','zh-TW':'curl 已複製'},
+  'Login successful': {'zh-CN':'登录成功','zh-TW':'登入成功'},
+  'Copied': {'zh-CN':'已复制','zh-TW':'已複製'},
+  'Deleted': {'zh-CN':'已删除','zh-TW':'已刪除'},
+  'Key updated': {'zh-CN':'已更新','zh-TW':'已更新'},
+  'Added': {'zh-CN':'已添加','zh-TW':'已新增'},
+  'Cleanup complete': {'zh-CN':'清理完成','zh-TW':'清理完成'},
+  'Health check complete': {'zh-CN':'健康检查完成','zh-TW':'健康檢查完成'},
+  'Model test complete': {'zh-CN':'模型测试完成','zh-TW':'模型測試完成'},
+  'Settings saved': {'zh-CN':'设置已保存','zh-TW':'設定已儲存'},
+  'Quota refreshed': {'zh-CN':'额度已刷新','zh-TW':'額度已刷新'},
+  'Refreshing…': {'zh-CN':'刷新中…','zh-TW':'重新整理中…'},
+  'Checking all proxies…': {'zh-CN':'正在检测所有代理…','zh-TW':'正在檢測所有代理…'},
+  'Starting cleanup of all conversations…': {'zh-CN':'开始清理所有对话…','zh-TW':'開始清理所有對話…'},
+  'Are you sure you want to delete this account?': {'zh-CN':'确定删除此账号？','zh-TW':'確定刪除此帳號？'},
+  'Are you sure you want to delete this API key?': {'zh-CN':'确定删除此密钥？','zh-TW':'確定刪除此金鑰？'},
+  'Are you sure you want to delete this conversation?': {'zh-CN':'确定删除此对话？','zh-TW':'確定刪除此對話？'},
+  'Are you sure you want to delete this proxy?': {'zh-CN':'确定删除此代理？','zh-TW':'確定刪除此代理？'},
+  'Are you sure you want to clean up all conversations?\nEach conversation will be deleted one by one, logged in the terminal below.': {'zh-CN':'确定清理所有对话？\n每条对话将逐一删除并在终端记录日志。','zh-TW':'確定清理所有對話？\n每條對話將逐一刪除並在終端機記錄日誌。'},
+  'Please paste the callback URL': {'zh-CN':'请粘贴回调地址','zh-TW':'請貼上回呼位址'},
+  'Name cannot be empty': {'zh-CN':'名称不能为空','zh-TW':'名稱不能為空'},
+  'Please enter a proxy address': {'zh-CN':'请输入代理地址','zh-TW':'請輸入代理地址'},
+  'Please load the model list first': {'zh-CN':'请先加载模型列表','zh-TW':'請先載入模型列表'},
+  'Key not found': {'zh-CN':'找不到密钥','zh-TW':'找不到金鑰'},
+  'Full key not available': {'zh-CN':'完整密钥不可用','zh-TW':'完整金鑰不可用'},
+  'Connection failed': {'zh-CN':'连接失败','zh-TW':'連線失敗'},
+  'Authorization succeeded': {'zh-CN':'授权成功','zh-TW':'授權成功'},
+  'Authorization timed out. Please restart the authorization.': {'zh-CN':'授权超时，请重新开始授权。','zh-TW':'授權逾時，請重新開始授權。'},
+  'The authorization window was closed before it finished.': {'zh-CN':'授权窗口在完成前已关闭。','zh-TW':'授權視窗在完成前已關閉。'},
+  'Authorization failed or expired': {'zh-CN':'授权失败或已过期','zh-TW':'授權失敗或已過期'},
+  'The popup window was blocked by your browser': {'zh-CN':'弹出窗口被浏览器拦截','zh-TW':'彈出視窗被瀏覽器攔截'},
+  'Please allow popups for this site and try again.': {'zh-CN':'请允许此网站的弹出窗口后重试。','zh-TW':'請允許此網站的彈出視窗後重試。'},
+  'The authorization page has opened in a new window': {'zh-CN':'授权页面已在新窗口打开','zh-TW':'授權頁面已在新視窗開啟'},
+  'Complete the sign-in in the popup window. After signing in, the popup will show a blank or error page — this is expected.': {'zh-CN':'请在弹出窗口中完成登录。登录后弹出页会显示空白或错误——这是正常现象。','zh-TW':'請在彈出視窗中完成登入。登入後彈出頁會顯示空白或錯誤——這是正常現象。'},
+  'Paste the full callback URL from the popup window\'s address bar…': {'zh-CN':'粘贴弹出页地址栏中的完整回调地址…','zh-TW':'貼上彈出頁地址欄中的完整回呼位址…'},
+  'Current key: ': {'zh-CN':'当前密钥：','zh-TW':'目前金鑰：'},
+  'Unnamed conversation': {'zh-CN':'未命名对话','zh-TW':'未命名對話'},
+  'Unnamed': {'zh-CN':'未命名','zh-TW':'未命名'},
+  'Failed to load the conversation list: ': {'zh-CN':'获取对话列表失败：','zh-TW':'取得對話列表失敗：'},
+  'Deleting conversation ': {'zh-CN':'正在删除对话 ', 'zh-TW':'正在刪除對話 '},
+  'Detect': {'zh-CN':'检测','zh-TW':'檢測'},
+  'Enter the model name to test': {'zh-CN':'输入要测试的模型名','zh-TW':'輸入要測試的模型名稱'},
+  '(cooldown)': {'zh-CN':'（冷却）','zh-TW':'（冷卻）'},
+  '(empty reply)': {'zh-CN':'（空回复）','zh-TW':'（空回覆）'},
+  'Chat': {'zh-CN':'对话','zh-TW':'對話'},
+  'Image generation': {'zh-CN':'生图','zh-TW':'生圖'},
+  'Visual Creator': {'zh-CN':'Visual创作','zh-TW':'Visual創作'},
+  'Claude Daily': {'zh-CN':'Claude 日限','zh-TW':'Claude 日限'},
+  'Claude Daily C1': {'zh-CN':'Claude 日C1','zh-TW':'Claude 日C1'},
+  'Claude Daily C2': {'zh-CN':'Claude 日C2','zh-TW':'Claude 日C2'},
+  'Claude Daily Word': {'zh-CN':'Claude 日Word','zh-TW':'Claude 日Word'},
+  'Claude Hourly Dev': {'zh-CN':'Claude 小时Dev','zh-TW':'Claude 小時Dev'},
+  'Claude Weekly Word': {'zh-CN':'Claude 周Word','zh-TW':'Claude 週Word'},
+  'Artifacts': {'zh-CN':'产物','zh-TW':'產物'},
+  'File reference': {'zh-CN':'文件引用','zh-TW':'檔案引用'},
+  'Code interpreter': {'zh-CN':'代码解释','zh-TW':'程式碼解釋'},
+  'Image analysis': {'zh-CN':'图像分析','zh-TW':'圖像分析'},
+  'Deep research': {'zh-CN':'深度研究','zh-TW':'深度研究'},
+  'Tuning': {'zh-CN':'调优','zh-TW':'調優'},
+  'Personal data': {'zh-CN':'个人数据','zh-TW':'個人資料'},
+  'Tenant data': {'zh-CN':'租户数据','zh-TW':'租戶資料'},
+  'Reasoning': {'zh-CN':'推理','zh-TW':'推理'},
+  'Cost': {'zh-CN':'成本','zh-TW':'成本'},
+  'Can generate {n} more images': {'zh-CN':'可再生 {n} 张图','zh-TW':'可再生 {n} 張圖'},
+  'About {n} chats remaining': {'zh-CN':'可对话约 {n} 次','zh-TW':'可對話約 {n} 次'},
+  '{n} Claude uses remaining': {'zh-CN':'Claude 剩余 {n} 次','zh-TW':'Claude 剩餘 {n} 次'},
+  '{n} remaining': {'zh-CN':'剩余 {n}','zh-TW':'剩餘 {n}'},
+  'No remaining-quota data yet; it will be filled in after the next request.': {'zh-CN':'暂无剩余额度数据，等待下一次请求回写','zh-TW':'暫無剩餘額度資料，等待下一次請求回寫'},
+  'concurrency {n}': {'zh-CN':'并发 {n}','zh-TW':'並發 {n}'},
+  'proxy {p}': {'zh-CN':'代理 {p}','zh-TW':'代理 {p}'},
+  'recovers in {n} min': {'zh-CN':'{n} 分钟后恢复','zh-TW':'{n} 分鐘後恢復'},
+  'No accounts in cooldown': {'zh-CN':'无冷却账号','zh-TW':'無冷卻帳號'},
+  'scheduling available': {'zh-CN':'调度可用','zh-TW':'調度可用'},
+  '{n} in concurrent use': {'zh-CN':'{n} 并发中','zh-TW':'{n} 並發中'},
+  'global circuit breaker open': {'zh-CN':'全局熔断开启','zh-TW':'全域熔斷開啟'},
+  'quota synced': {'zh-CN':'已同步额度','zh-TW':'已同步額度'},
+  'schedulable': {'zh-CN':'可调度','zh-TW':'可調度'},
+  'concurrent': {'zh-CN':'并发','zh-TW':'並發'},
+  'rate-limited': {'zh-CN':'限流','zh-TW':'限流'},
+  'circuit breaker': {'zh-CN':'熔断','zh-TW':'熔斷'},
+  'All accounts are cooling down; wait for recovery or add more accounts': {'zh-CN':'全部账号冷却中，等待恢复或增加账号','zh-TW':'全部帳號冷卻中，等待恢復或增加帳號'},
+  'Accounts with 0 image-generation quota can still handle text-only requests': {'zh-CN':'生图为 0 的账号仍可接纯文本请求','zh-TW':'生圖為 0 的帳號仍可接純文字請求'},
+  'Conversation {u} / {m}': {'zh-CN':'对话 {u} / {m}','zh-TW':'對話 {u} / {m}'},
+  'No conversation-level data yet (it will be filled in after the next request)': {'zh-CN':'对话水位暂无数据（等待下一次请求回写）','zh-TW':'對話水位暫無資料（等待下一次請求回寫）'},
+  'Rate-limit reason: {r}': {'zh-CN':'限流原因：{r}','zh-TW':'限流原因：{r}'},
+  'access denied': {'zh-CN':'已拒绝访问','zh-TW':'已拒絕存取'},
+  'Quota data will be shown after the next successful request': {'zh-CN':'额度数据等待下一次成功请求后展示','zh-TW':'額度資料等待下一次成功請求後展示'},
+  'The account has been added to the account pool.': {'zh-CN':'账号已加入账号池。','zh-TW':'帳號已加入帳號池。'},
+  'Test': {'zh-CN':'测试','zh-TW':'測試'},
+  'Refresh quota': {'zh-CN':'刷新额度','zh-TW':'重新整理額度'},
+  'Test model': {'zh-CN':'单测模型','zh-TW':'單測模型'},
+  'Test succeeded {ms}ms': {'zh-CN':'单测成功 {ms}ms','zh-TW':'單測成功 {ms}ms'},
+  'A popup window will open the Microsoft sign-in page; return to this page after signing in.': {'zh-CN':'弹出窗口将打开 Microsoft 登录页面，完成登录后返回此页面。','zh-TW':'彈出視窗將開啟 Microsoft 登入頁面，完成登入後返回此頁面。'},
+  'Copy the callback URL from the popup\'s address bar': {'zh-CN':'复制弹出页地址栏中的回调地址','zh-TW':'複製彈出頁地址欄中的回呼位址'},
+  'After signing in, the popup will show a blank or error page — this is expected. Copy the full URL from the popup\'s address bar (it includes code=... and state=...).': {'zh-CN':'登录后弹出页会显示空白或错误——这是正常的。复制弹出页地址栏的完整网址（包含 code=... 和 state=...）。','zh-TW':'登入後彈出頁會顯示空白或錯誤——這是正常的。複製彈出頁地址欄的完整網址（包含 code=... 和 state=...）。'},
+  'Paste it into the "Callback URL" field below and click "Confirm and add" to finish authorization': {'zh-CN':'粘贴到下方"回调地址"输入框，点击"确认添加"完成授权','zh-TW':'貼到下方「回呼位址」輸入框，點擊「確認新增」完成授權'},
+  'You must manually paste the callback URL to finish authorization': {'zh-CN':'必须手动粘贴回调地址以完成授权','zh-TW':'必須手動貼上回呼位址以完成授權'},
+  'After signing in inside the popup window, the page will show a blank or error page — this is expected, because the callback endpoint isn\'t a real website. Authorization is not yet complete. Copy the full URL from the popup\'s address bar (it looks like http://localhost:4141/api/auth/callback?code=M.C5...&state=abc123), then paste it into the "Callback URL" field below.': {'zh-CN':'在弹出窗口中登录后，页面会显示空白或错误——这是正常的，因为回调端点不是真正的网站。授权尚未完成。复制弹出页地址栏中的完整网址（形如 http://localhost:4141/api/auth/callback?code=M.C5...&state=abc123），粘贴到下方"回调地址"输入框。','zh-TW':'在彈出視窗中登入後，頁面會顯示空白或錯誤——這是正常的，因為回呼端點不是真正的網站。授權尚未完成。複製彈出頁地址欄中的完整網址（形如 http://localhost:4141/api/auth/callback?code=M.C5...&state=abc123），貼到下方「回呼位址」輸入框。'}
 };
 function preferredLocale(){
   try{
@@ -928,6 +1038,7 @@ function translateText(value){
   if(!translated||translated===trimmed)return value;
   return value.replace(trimmed,translated);
 }
+function T(en){const entry=localeText[en];return (entry&&entry[currentLocale])||en;}
 function translatePage(){
   const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
   const nodes=[];let node;
@@ -993,7 +1104,7 @@ function buildCurl(keyPrefix){
   return `curl ${base}/v1/chat/completions \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${keyPrefix}..." \\\n  -d '{"model":"auto","messages":[{"role":"user","content":"Say hello in one sentence."}]}'`;
 }
 async function copyCurl(){
-  try{await navigator.clipboard.writeText($('onbCurl').textContent.trim());showNotice('curl 已复制','success');}catch(e){}
+  try{await navigator.clipboard.writeText($('onbCurl').textContent.trim());showNotice(T('curl command copied'),'success');}catch(e){}
 }
 async function loadOnboarding(){
   let acc=0,key=0,prefix='sk-';
@@ -1027,7 +1138,7 @@ $('loginForm')?.addEventListener('submit',async e=>{
     if(d.must_change_password){location.replace('/login');return;}
     $('login').style.display='none';$('app').style.display='flex';
     showPage('dashboard');loadStats();
-    showNotice('登录成功','success');
+    showNotice(T('Login successful'),'success');
   }catch(e){showNotice(e.message,'error');}
 });
 
@@ -1057,7 +1168,7 @@ async function loadStats(){
   }catch(e){}
 }
 
-const QUOTA_LABELS={LLMOnly:'对话',ImageGeneration:'生图',GraphicArt:'GraphicArt',VisualCreator:'Visual创作',ClaudeOpusQuery:'Claude Opus',ClaudeOpusQuery75:'Claude 75',ClaudeOpusQueryC1:'Claude C1',ClaudeOpusQueryC2:'Claude C2',ClaudeOpusQueryDaily:'Claude 日限',ClaudeOpusQueryDailyC1:'Claude 日C1',ClaudeOpusQueryDailyC2:'Claude 日C2',ClaudeOpusQueryDailyWord:'Claude 日Word',ClaudeOpusQueryDev:'Claude Dev',ClaudeOpusQueryHourlyDev:'Claude 小时Dev',ClaudeOpusQueryWeeklyWord:'Claude 周Word',ArtifactGeneration:'产物',WXPAgentMode:'Agent',FileReference:'文件引用',CodeInterpreter:'代码解释',ImageAnalysis:'图像分析',DeepResearch:'深度研究',DeepWork:'DeepWork',CopilotTuning:'调优',NotebookCowork:'Notebook',PersonalDataAccess:'个人数据',TenantDataAccess:'租户数据',ReasoningModelTurnUsage:'推理',CostQuota:'成本'};
+const QUOTA_LABELS={LLMOnly:'Chat',ImageGeneration:'Image generation',GraphicArt:'GraphicArt',VisualCreator:'Visual Creator',ClaudeOpusQuery:'Claude Opus',ClaudeOpusQuery75:'Claude 75',ClaudeOpusQueryC1:'Claude C1',ClaudeOpusQueryC2:'Claude C2',ClaudeOpusQueryDaily:'Claude Daily',ClaudeOpusQueryDailyC1:'Claude Daily C1',ClaudeOpusQueryDailyC2:'Claude Daily C2',ClaudeOpusQueryDailyWord:'Claude Daily Word',ClaudeOpusQueryDev:'Claude Dev',ClaudeOpusQueryHourlyDev:'Claude Hourly Dev',ClaudeOpusQueryWeeklyWord:'Claude Weekly Word',ArtifactGeneration:'Artifacts',WXPAgentMode:'Agent',FileReference:'File reference',CodeInterpreter:'Code interpreter',ImageAnalysis:'Image analysis',DeepResearch:'Deep research',DeepWork:'DeepWork',CopilotTuning:'Tuning',NotebookCowork:'Notebook',PersonalDataAccess:'Personal data',TenantDataAccess:'Tenant data',ReasoningModelTurnUsage:'Reasoning',CostQuota:'Cost'};
 const QUOTA_ICONS={LLMOnly:'message-circle',ImageGeneration:'image',ClaudeOpusQuery:'sparkles',ClaudeOpusQueryDaily:'calendar',ArtifactGeneration:'box',WXPAgentMode:'bot',FileReference:'file-text',CodeInterpreter:'code-2',ReasoningModelTurnUsage:'brain'};
 function renderQuotaDashboard(){
   const list=_accountsCache||[];
@@ -1074,12 +1185,12 @@ function renderQuotaDashboard(){
   let keys=[...preferred.filter(k=>k in totals),...Object.keys(totals).filter(k=>!preferred.includes(k)).sort()];
   keys=keys.filter(k=> totals[k]!==0 || ['LLMOnly','ImageGeneration','ClaudeOpusQuery'].includes(k));
   const totalBadges=keys.map(k=>{
-    const v=totals[k]; const label=QUOTA_LABELS[k]||k; const icon=QUOTA_ICONS[k]||'layers';
-    const hint=k==='ImageGeneration'?`可再生 ${v} 张图`:k==='LLMOnly'?`可对话约 ${v} 次`:k.includes('Claude')?`Claude 剩余 ${v} 次`:`剩余 ${v}`;
+    const v=totals[k]; const label=T(QUOTA_LABELS[k]||k); const icon=QUOTA_ICONS[k]||'layers';
+    const hint=k==='ImageGeneration'?T('Can generate {n} more images').replace('{n}',v):k==='LLMOnly'?T('About {n} chats remaining').replace('{n}',v):k.includes('Claude')?T('{n} Claude uses remaining').replace('{n}',v):T('{n} remaining').replace('{n}',v);
     const low=v<=10&&v>0, zero=v===0;
     return `<div style="min-width:148px;flex:1;padding:12px;border-radius:12px;border:1px solid ${zero?'#fecaca':low?'#fde68a':'var(--line)'};background:var(--surface);box-shadow:var(--shadow-sm);animation:slideUp .3s var(--ease-out) both"><div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)"><i data-lucide="${icon}" style="width:12px;height:12px"></i>${esc(label)} · ${esc(k)}</div><div style="font-size:22px;font-weight:700;margin-top:6px;letter-spacing:-0.02em;color:${zero?'var(--danger)':''}">${v}</div><div style="font-size:11px;color:var(--muted);margin-top:2px">${hint}</div></div>`;
   }).join('');
-  $('quotaTotals').innerHTML=totalBadges?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">${totalBadges}</div>`:'<span style="font-size:12px;color:var(--muted)">暂无剩余额度数据，等待下一次请求回写</span>';
+  $('quotaTotals').innerHTML=totalBadges?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">${totalBadges}</div>`:`<span style="font-size:12px;color:var(--muted)">${T('No remaining-quota data yet; it will be filled in after the next request.')}</span>`;
   const cooldowns=list.filter(x=>x.cooldownUntil).sort((a,b)=>new Date(a.cooldownUntil)-new Date(b.cooldownUntil));
   const now=Date.now();
   const busy=list.filter(x=> (x.concurrency||0)>0).length;
@@ -1087,14 +1198,14 @@ function renderQuotaDashboard(){
   $('quotaCooldowns').innerHTML=cooldowns.length?cooldowns.map(x=>{
     const until=new Date(x.cooldownUntil).getTime(); const left=Math.max(0,until-now); const mins=Math.ceil(left/60000);
     const pct=Math.max(0,Math.min(100,Math.round((left/(15*60000))*100)));
-    const conc=x.concurrency?` · 并发 ${x.concurrency}`:''; const proxy=x.boundProxy?` · 代理 ${esc(x.boundProxy)}`:'';
-    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;margin-top:8px;background:var(--surface)"><span style="font-size:12px;flex:1">${esc(x.email||x.displayName||x.id)} · 冷却中 · ${mins} 分钟后恢复${conc}${proxy}</span><span style="width:90px;height:6px;background:var(--border);border-radius:999px;overflow:hidden"><span style="display:block;height:100%;width:${pct}%;background:#d97706"></span></span></div>`;
-  }).join(''):`<div style="font-size:12px;color:var(--muted);margin-top:8px">无冷却账号 · 调度可用${busy?` · ${busy} 并发中`:''}${circuit?' · 全局熔断开启':''}</div>`;
+    const conc=x.concurrency?` · ${T('concurrency {n}').replace('{n}',x.concurrency)}`:''; const proxy=x.boundProxy?` · ${T('proxy {p}').replace('{p}',esc(x.boundProxy))}`:'';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;margin-top:8px;background:var(--surface)"><span style="font-size:12px;flex:1">${esc(x.email||x.displayName||x.id)} · ${T('Cooling down')} · ${T('recovers in {n} min').replace('{n}',mins)}${conc}${proxy}</span><span style="width:90px;height:6px;background:var(--border);border-radius:999px;overflow:hidden"><span style="display:block;height:100%;width:${pct}%;background:#d97706"></span></span></div>`;
+  }).join(''):`<div style="font-size:12px;color:var(--muted);margin-top:8px">${T('No accounts in cooldown')} · ${T('scheduling available')}${busy?` · ${T('{n} in concurrent use').replace('{n}',busy)}`:''}${circuit?` · ${T('global circuit breaker open')}`:''}</div>`;
   const avail=list.filter(x=>x.status==='online').length;
   const total=list.length;
   const over=list.filter(x=>x.meterError).length;
-  $('quotaSub').textContent=`${withData}/${total} 已同步额度 · ${avail} 可调度${busy?` · ${busy} 并发`:''}` + (over?` · ${over} 限流`:'') + (circuit?' · 熔断':'');
-  $('quotaAdvice').textContent=avail===0?'全部账号冷却中，等待恢复或增加账号':'生图为 0 的账号仍可接纯文本请求';
+  $('quotaSub').textContent=`${withData}/${total} ${T('quota synced')} · ${avail} ${T('schedulable')}${busy?` · ${busy} ${T('concurrent')}`:''}` + (over?` · ${over} ${T('rate-limited')}`:'') + (circuit?` · ${T('circuit breaker')}`:'');
+  $('quotaAdvice').textContent=avail===0?T('All accounts are cooling down; wait for recovery or add more accounts'):T('Accounts with 0 image-generation quota can still handle text-only requests');
   try{ lucide.createIcons(); }catch(e){}
 }
 
@@ -1132,12 +1243,12 @@ function accountQuotaDetails(x){
   if(Number.isFinite(used)&&Number.isFinite(max)&&max>0){
     const pct=Math.min(100,Math.round(used/max*100));
     const barColor=pct>=90?'var(--danger)':pct>=70?'#d97706':'var(--primary)';
-    conv=`<div style="display:flex;align-items:center;gap:8px;margin-top:6px"><span style="font-size:11px;color:var(--muted)">对话 ${used} / ${max}</span><span style="flex:1;max-width:120px;height:6px;background:var(--border);border-radius:999px;overflow:hidden"><span style="display:block;height:100%;width:${pct}%;background:${barColor}"></span></span><span style="font-size:11px;color:var(--muted)">${pct}%</span></div>`;
+    conv=`<div style="display:flex;align-items:center;gap:8px;margin-top:6px"><span style="font-size:11px;color:var(--muted)">${T('Conversation {u} / {m}').replace('{u}',used).replace('{m}',max)}</span><span style="flex:1;max-width:120px;height:6px;background:var(--border);border-radius:999px;overflow:hidden"><span style="display:block;height:100%;width:${pct}%;background:${barColor}"></span></span><span style="font-size:11px;color:var(--muted)">${pct}%</span></div>`;
   } else if (x.meterError||badges) {
-    conv=`<div style="font-size:11px;color:var(--muted);margin-top:6px">对话水位暂无数据（等待下一次请求回写）</div>`;
+    conv=`<div style="font-size:11px;color:var(--muted);margin-top:6px">${T('No conversation-level data yet (it will be filled in after the next request)')}</div>`;
   }
-  const meter=x.meterError?`<div style="margin-top:6px;padding:6px 8px;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;font-size:11px">限流原因：${esc(x.meterError)}${x.meterHasAccess===false?' · 已拒绝访问':''}</div>`:'';
-  if(!badges&&!meter&&!conv) return `<div style="font-size:11px;color:var(--muted);margin-top:6px">额度数据等待下一次成功请求后展示</div>`;
+  const meter=x.meterError?`<div style="margin-top:6px;padding:6px 8px;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;font-size:11px">${T('Rate-limit reason: {r}').replace('{r}',esc(x.meterError))}${x.meterHasAccess===false?' · '+T('access denied'):''}</div>`:'';
+  if(!badges&&!meter&&!conv) return `<div style="font-size:11px;color:var(--muted);margin-top:6px">${T('Quota data will be shown after the next successful request')}</div>`;
   return `<div style="margin-top:6px">${meter}${conv}${badges?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${badges}</div>`:''}</div>`;
 }
 function renderAccounts(){
@@ -1158,7 +1269,7 @@ function renderAccounts(){
     const calls=(x.rateLimited?`Limited after ${x.callCount||0} calls`:`Called ${x.callCount||0} times`)+accountQuotaDetails(x);
     const scheduleEnabled=x.scheduleEnabled!==false;
     const tr=document.createElement('tr');
-    tr.innerHTML=`<td><div class="account-cell"><div class="avatar"></div><div><b></b><div class="account-email" style="font-size:11px;color:var(--muted)"></div></div></div></td><td style="font-size:12px;white-space:nowrap">${calls}<div style="margin-top:6px"><button class="btn-sm btn" data-account-action="probe">刷新额度</button></div></td><td>${status}</td><td style="font-size:12px;color:var(--muted)">${x.updatedAt?new Date(x.updatedAt).toLocaleString():'-'}</td><td><button class="btn-sm btn${scheduleEnabled?'':' danger'}" data-account-action="schedule">${scheduleEnabled?'Enabled':'Disabled'}</button></td><td><span class="account-proxy" style="font-size:11px;word-break:break-all"></span> <button class="btn-sm btn" style="margin-top:2px" data-account-action="proxy">Bind</button></td><td><button class="btn-sm btn danger" data-account-action="delete">Delete</button></td>`;
+    tr.innerHTML=`<td><div class="account-cell"><div class="avatar"></div><div><b></b><div class="account-email" style="font-size:11px;color:var(--muted)"></div></div></div></td><td style="font-size:12px;white-space:nowrap">${calls}<div style="margin-top:6px"><button class="btn-sm btn" data-account-action="probe">Refresh quota</button></div></td><td>${status}</td><td style="font-size:12px;color:var(--muted)">${x.updatedAt?new Date(x.updatedAt).toLocaleString():'-'}</td><td><button class="btn-sm btn${scheduleEnabled?'':' danger'}" data-account-action="schedule">${scheduleEnabled?'Enabled':'Disabled'}</button></td><td><span class="account-proxy" style="font-size:11px;word-break:break-all"></span> <button class="btn-sm btn" style="margin-top:2px" data-account-action="proxy">Bind</button></td><td><button class="btn-sm btn danger" data-account-action="delete">Delete</button></td>`;
     tr.querySelector('.avatar').textContent=(x.displayName||x.email||'M')[0];
     tr.querySelector('b').textContent=x.displayName||x.email||'';
     tr.querySelector('.account-email').textContent=x.email||'';
@@ -1171,13 +1282,13 @@ function renderAccounts(){
   });
 }
 async function probeAccount(id, btn){
-  if(btn){ btn.disabled=true; btn.textContent='刷新中…'; }
-  try{ await api('/api/admin/models/test',{method:'POST',body:JSON.stringify({model:'m365-copilot', account_id:id})}); showNotice('额度已刷新','success'); await loadAccounts(); }catch(e){ showNotice(e.message,'error'); }finally{ if(btn){ btn.disabled=false; btn.textContent='刷新额度'; } }
+  if(btn){ btn.disabled=true; btn.textContent=T('Refreshing…'); }
+  try{ await api('/api/admin/models/test',{method:'POST',body:JSON.stringify({model:'m365-copilot', account_id:id})}); showNotice(T('Quota refreshed'),'success'); await loadAccounts(); }catch(e){ showNotice(e.message,'error'); }finally{ if(btn){ btn.disabled=false; btn.textContent=T('Refresh quota'); } }
 }
 async function testSingleModel(id, btn){
-  const model=prompt('输入要测试的模型名','m365-copilot')?.trim(); if(!model) return;
-  if(btn){ btn.disabled=true; btn.textContent='测试中…'; }
-  try{ const r=await api('/api/admin/models/test',{method:'POST',body:JSON.stringify({model, account_id:id})}); showNotice(`单测成功 ${r.latency_ms||''}ms`,'success'); }catch(e){ showNotice(e.message,'error'); }finally{ if(btn){ btn.disabled=false; btn.textContent='单测模型'; } }
+  const model=prompt(T('Enter the model name to test'),'m365-copilot')?.trim(); if(!model) return;
+  if(btn){ btn.disabled=true; btn.textContent=T('Testing…'); }
+  try{ const r=await api('/api/admin/models/test',{method:'POST',body:JSON.stringify({model, account_id:id})}); showNotice(T('Test succeeded {ms}ms').replace('{ms}',r.latency_ms||''),'success'); }catch(e){ showNotice(e.message,'error'); }finally{ if(btn){ btn.disabled=false; btn.textContent=T('Test model'); } }
 }
 let _accountsTimer=null;
 async function loadAccounts(){
@@ -1206,8 +1317,8 @@ async function toggleAccountSchedule(id,enabled){
 }
 
 async function deleteAccount(id){
-  if(!confirm('确定删除此账号？'))return;
-  try{await api('/api/accounts/delete',{method:'POST',body:JSON.stringify({id})});showNotice('已删除','success');loadAccounts();showPage('dashboard');}
+  if(!confirm(T('Are you sure you want to delete this account?')))return;
+  try{await api('/api/accounts/delete',{method:'POST',body:JSON.stringify({id})});showNotice(T('Deleted'),'success');loadAccounts();showPage('dashboard');}
   catch(e){showNotice(e.message,'error');}
 }
 
@@ -1222,18 +1333,18 @@ async function startPKCE(){
     const d=await api('/api/auth/start');
     $('callbackInput').dataset.state=d.state;
     const popup=window.open(d.url,'pkce','width=600,height=800');
-    if(!popup){$('authStatus').innerHTML='<div class="highlight-box warning"><div class="highlight-box-title"><i data-lucide="alert-circle" style="width:14px;height:14px"></i>弹出窗口被浏览器拦截</div><p>请允许此网站的弹出窗口，然后重新点击"开始授权"。</p></div>';lucide.createIcons();return;}
-    $('authStatus').innerHTML='<div class="highlight-box"><div class="highlight-box-title"><i data-lucide="info" style="width:14px;height:14px"></i>授权页面已在新窗口打开</div><p>请在弹出窗口中完成登录。登录后弹出页会显示空白或错误——这是正常的。复制弹出页地址栏的<b>完整网址</b>，粘贴到下方"回调地址"输入框。</p></div>';
+    if(!popup){$('authStatus').innerHTML=`<div class="highlight-box warning"><div class="highlight-box-title"><i data-lucide="alert-circle" style="width:14px;height:14px"></i>${T('The popup window was blocked by your browser')}</div><p>${T('Please allow popups for this site and try again.')}</p></div>`;lucide.createIcons();return;}
+    $('authStatus').innerHTML=`<div class="highlight-box"><div class="highlight-box-title"><i data-lucide="info" style="width:14px;height:14px"></i>${T('The authorization page has opened in a new window')}</div><p>${T('Complete the sign-in in the popup window. After signing in, the popup will show a blank or error page — this is expected.')}</p></div>`;
     $('callbackInput').focus();
-    $('callbackInput').placeholder='粘贴弹出页地址栏中的完整回调地址…';
+    $('callbackInput').placeholder=T('Paste the full callback URL from the popup window\'s address bar…');
     if(pkceTimer)clearInterval(pkceTimer);
     const start=Date.now();
     pkceTimer=setInterval(async()=>{
-      if(Date.now()-start>600000){clearInterval(pkceTimer);$('authStatus').innerHTML='<div class="highlight-box warning"><b>授权超时，请重新开始授权。</b></div>';return;}
-      if(popup&&popup.closed){clearInterval(pkceTimer);$('authStatus').innerHTML='<div class="highlight-box warning"><b>授权窗口在完成前已关闭。</b></div>';return;}
+      if(Date.now()-start>600000){clearInterval(pkceTimer);$('authStatus').innerHTML=`<div class="highlight-box warning"><b>${T('Authorization timed out. Please restart the authorization.')}</b></div>`;return;}
+      if(popup&&popup.closed){clearInterval(pkceTimer);$('authStatus').innerHTML=`<div class="highlight-box warning"><b>${T('The authorization window was closed before it finished.')}</b></div>`;return;}
       try{const s=await api('/api/auth/status?state='+d.state);
-        if(s.status==='authenticated'){clearInterval(pkceTimer);$('authStatus').innerHTML='<div class="highlight-box success"><div class="highlight-box-title"><i data-lucide="check-circle" style="width:14px;height:14px"></i>授权成功</div><p>账号已加入账号池。</p></div>';showNotice('授权成功','success');loadAccounts();}
-        if(s.status==='error'||s.status==='expired'){clearInterval(pkceTimer);$('authStatus').innerHTML='<div class="highlight-box warning"><b>授权失败或已过期</b></div>';}
+        if(s.status==='authenticated'){clearInterval(pkceTimer);$('authStatus').innerHTML=`<div class="highlight-box success"><div class="highlight-box-title"><i data-lucide="check-circle" style="width:14px;height:14px"></i>${T('Authorization succeeded')}</div><p>${T('The account has been added to the account pool.')}</p></div>`;showNotice(T('Authorization succeeded'),'success');loadAccounts();}
+        if(s.status==='error'||s.status==='expired'){clearInterval(pkceTimer);$('authStatus').innerHTML=`<div class="highlight-box warning"><b>${T('Authorization failed or expired')}</b></div>`;}
       }catch(e){}
     },2000);
   }catch(e){showNotice(e.message,'error');}
@@ -1241,12 +1352,12 @@ async function startPKCE(){
 
 async function submitCallback(){
   const raw=$('callbackInput').value.trim();
-  if(!raw)return showNotice('请粘贴回调地址','error');
+  if(!raw)return showNotice(T('Please paste the callback URL'),'error');
   try{
     let u='/api/auth/callback?';
     if(raw.includes('://')){u+='url='+encodeURIComponent(raw);}
     else{u+=raw.replace(/^\?/,'');if(!raw.includes('state='))$('callbackInput').dataset.state&&(u+='&state='+$('callbackInput').dataset.state);}
-    await api(u);showNotice('授权成功','success');$('callbackInput').value='';loadAccounts();showPage('dashboard');
+    await api(u);showNotice(T('Authorization succeeded'),'success');$('callbackInput').value='';loadAccounts();showPage('dashboard');
   }catch(e){showNotice(e.message,'error');}
 }
 
@@ -1278,8 +1389,8 @@ function editKey(id,name){editKeyId=id;$('editKeyName').value=name;$('editKeyMod
 function closeEditKeyModal(){$('editKeyModal').classList.remove('open');editKeyId=null;}
 async function saveEditKey(){
   const name=$('editKeyName').value.trim();
-  if(!name)return showNotice('名称不能为空','error');
-  try{await api('/api/admin/keys',{method:'PUT',body:JSON.stringify({id:editKeyId,name})});closeEditKeyModal();showNotice('已更新','success');loadKeys();}
+  if(!name)return showNotice(T('Name cannot be empty'),'error');
+  try{await api('/api/admin/keys',{method:'PUT',body:JSON.stringify({id:editKeyId,name})});closeEditKeyModal();showNotice(T('Key updated'),'success');loadKeys();}
   catch(e){showNotice(e.message,'error');}
 }
 async function toggleKey(id,revoked){
@@ -1289,7 +1400,7 @@ async function toggleKey(id,revoked){
 
 function openKeyModal(){$('keyModal').classList.add('open');$('keyResult').style.display='none';$('keyName').value='default';setTimeout(()=>$('keyName').focus(),50);}
 function closeKeyModal(){$('keyModal').classList.remove('open');}
-async function copyKey(){try{await navigator.clipboard.writeText($('keyValue').value);showNotice('已复制','success');}catch(e){}}
+async function copyKey(){try{await navigator.clipboard.writeText($('keyValue').value);showNotice(T('Copied'),'success');}catch(e){}}
 async function createKey(e){
   e.preventDefault();
   try{
@@ -1297,7 +1408,7 @@ async function createKey(e){
     $('keyValue').value=d.key;$('keyResult').style.display='block';copyKey();loadKeys();
   }catch(e){showNotice(e.message,'error');}
 }
-async function revokeKey(id){if(!confirm('确定删除此密钥？'))return;try{await api('/api/admin/keys?id='+id,{method:'DELETE'});loadKeys();}catch(e){showNotice(e.message,'error');}}
+async function revokeKey(id){if(!confirm(T('Are you sure you want to delete this API key?')))return;try{await api('/api/admin/keys?id='+id,{method:'DELETE'});loadKeys();}catch(e){showNotice(e.message,'error');}}
 
 // ===== Usage page =====
 let usageDays=7, ugPageNo=0, ugTotal=0;
@@ -1440,8 +1551,8 @@ async function openUseKey(id){
   useKeyId=id;
   const d=await api('/api/admin/keys');
   const rec=(d.keys||[]).find(x=>x.id===id);
-  if(!rec){showNotice('找不到密钥','error');return;}
-  $('useKeyName').textContent='当前密钥：'+rec.name+' ('+rec.prefix+')';
+  if(!rec){showNotice(T('Key not found'),'error');return;}
+  $('useKeyName').textContent=T('Current key: ')+rec.name+' ('+rec.prefix+')';
   $('useKeyVal').value=rec.raw||'';
   $('useKeyModal').classList.add('open');
   renderUkeTabs();
@@ -1456,7 +1567,7 @@ function renderUkeTabs(){
 function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function ukeFile(path,content){
   return `<div class="uke-file">
-    <div class="uke-file-head"><code>${esc(path)}</code><button class="btn btn-sm" onclick="navigator.clipboard.writeText(this.closest('.uke-file').querySelector('pre').textContent.trim());showNotice('已复制','success')">Copy</button></div>
+    <div class="uke-file-head"><code>${esc(path)}</code><button class="btn btn-sm" onclick="navigator.clipboard.writeText(this.closest('.uke-file').querySelector('pre').textContent.trim());showNotice(${JSON.stringify(T('Copied'))},'success')">Copy</button></div>
     <pre>${esc(content)}</pre>
   </div>`;
 }
@@ -1526,8 +1637,8 @@ goals = true`;
 }
 async function copyUseKey(){
   const v=$('useKeyVal').value;
-  if(!v){showNotice('完整密钥不可用','error');return;}
-  try{await navigator.clipboard.writeText(v);showNotice('已复制','success');}catch(e){}
+  if(!v){showNotice(T('Full key not available'),'error');return;}
+  try{await navigator.clipboard.writeText(v);showNotice(T('Copied'),'success');}catch(e){}
 }
 
 async function loadConversations(){
@@ -1538,7 +1649,7 @@ async function loadConversations(){
       const id=String(x.conversationId||'');
       const updated=x.updateTimeUtc||x.createTimeUtc;
       return `<tr class="conv-row" data-conversation-id="${esc(id)}">
-        <td><button class="conv-link" type="button">${esc(x.chatName||'未命名对话')}</button><div class="conv-meta"><code>${esc(id)}</code></div></td>
+        <td><button class="conv-link" type="button">${esc(x.chatName||T('Unnamed conversation'))}</button><div class="conv-meta"><code>${esc(id)}</code></div></td>
         <td>${Number(x.messageCount||0)}</td>
         <td>${esc(x.accountEmail||x.accountId||'-')}</td>
         <td style="font-size:12px;color:var(--muted)">${updated?new Date(updated).toLocaleString():'-'}</td>
@@ -1562,16 +1673,16 @@ function termOpen(title){$('termTitle').textContent=title;$('termBody').innerHTM
 function termLine(msg,cls){const d=document.createElement('div');if(cls)d.className=cls;d.textContent='> '+msg;$('termBody').appendChild(d);$('termBody').scrollTop=$('termBody').scrollHeight;}
 function termClear(){$('termBody').innerHTML='';}
 
-async function deleteConv(id){if(!confirm('确定删除此对话？'))return;try{await api('/api/m365/conversations/delete',{method:'POST',body:JSON.stringify({conversation_id:id})});showNotice('已删除','success');loadConversations();}catch(e){showNotice(e.message,'error');}}
+async function deleteConv(id){if(!confirm(T('Are you sure you want to delete this conversation?')))return;try{await api('/api/m365/conversations/delete',{method:'POST',body:JSON.stringify({conversation_id:id})});showNotice(T('Deleted'),'success');loadConversations();}catch(e){showNotice(e.message,'error');}}
 async function cleanupAll(){
-  const total=confirm('确定清理所有对话？\n每条对话将逐一删除并在终端记录日志。');
+  const total=confirm(T('Are you sure you want to clean up all conversations?\nEach conversation will be deleted one by one, logged in the terminal below.'));
   if(!total)return;
   termOpen('cleanup — m365-copilot2api');
-  termLine('开始清理所有对话…');
+  termLine(T('Starting cleanup of all conversations…'));
   let ok=0,fail=0,round=0;
   for(round=1;round<=100;round++){
     let d;
-    try{d=await api('/api/m365/conversations');}catch(e){termLine('获取对话列表失败：'+e.message,'err');break;}
+    try{d=await api('/api/m365/conversations');}catch(e){termLine(T('Failed to load the conversation list: ')+e.message,'err');break;}
     const c=d.data||[];
     if(!c.length){
       termLine('Round '+round+': list is empty.','dim');
@@ -1580,7 +1691,7 @@ async function cleanupAll(){
     termLine('Round '+round+': found '+c.length+' conversations (paged loading; fetch the next batch after deletion)','dim');
     for(let i=0;i<c.length;i++){
       const x=c[i];
-      const name=x.chatName||'未命名';
+      const name=x.chatName||T('Unnamed');
       termLine('['+(i+1)+'/'+c.length+'] Deleting "'+name+'" '+String(x.conversationId||'').slice(0,8)+'…');
       try{
         await api('/api/m365/conversations/delete',{method:'POST',body:JSON.stringify({conversation_id:x.conversationId})});
@@ -1591,7 +1702,7 @@ async function cleanupAll(){
     await new Promise(r=>setTimeout(r,500));
   }
   termLine('Finished: '+ok+' succeeded, '+fail+' failed, '+round+' rounds total.',fail?'warn':'ok');
-  showNotice('清理完成','success');loadConversations();
+  showNotice(T('Cleanup complete'),'success');loadConversations();
 }
 
 function proxyRow(x){
@@ -1604,7 +1715,7 @@ function proxyRow(x){
     <td style="font-size:12px;color:var(--muted)">${x.failures||0}</td>
     <td style="font-size:12px;color:var(--muted)">${x.cooldownUntil?new Date(x.cooldownUntil).toLocaleString():'-'}</td>
     <td style="text-align:right;white-space:nowrap">
-      <button class="btn-sm btn" onclick="proxyCheckOne('${esc(x.url)}')">检测</button>
+      <button class="btn-sm btn" onclick="proxyCheckOne('${esc(x.url)}')">${T('Detect')}</button>
       <button class="btn-sm btn danger" onclick="proxyRemove('${esc(x.url)}')">Delete</button>
     </td>
   </tr>`;
@@ -1618,15 +1729,15 @@ async function loadProxies(){
 }
 async function proxyAdd(){
   const raw=$('proxyInput').value.trim();
-  if(!raw)return showNotice('请输入代理地址','error');
+  if(!raw)return showNotice(T('Please enter a proxy address'),'error');
   try{
     const d=await api('/api/admin/proxy-pool',{method:'POST',body:JSON.stringify({urls:[raw]})});
     showNotice('Added '+d.added+' proxies','success');$('proxyInput').value='';loadProxies();
   }catch(e){showNotice(e.message,'error');}
 }
 async function proxyRemove(url){
-  if(!confirm('确定删除代理 '+url+'？'))return;
-  try{await api('/api/admin/proxy-pool?url='+encodeURIComponent(url),{method:'DELETE'});showNotice('已删除','success');loadProxies();}
+  if(!confirm(T('Are you sure you want to delete this proxy?')))return;
+  try{await api('/api/admin/proxy-pool?url='+encodeURIComponent(url),{method:'DELETE'});showNotice(T('Deleted'),'success');loadProxies();}
   catch(e){showNotice(e.message,'error');}
 }
 async function proxyCheckOne(url){
@@ -1634,13 +1745,13 @@ async function proxyCheckOne(url){
     const d=await api('/api/admin/proxy-pool?action=check',{method:'PUT',body:JSON.stringify({url})});
     const rec=(d.proxies||[]).find(x=>x.url===url);
     if(rec&&rec.health==='reachable')showNotice('Connection healthy: '+rec.latencyMs+' ms','success');
-    else showNotice(rec&&rec.lastError?rec.lastError:'连接失败','error');
+    else showNotice(rec&&rec.lastError?rec.lastError:T('Connection failed'),'error');
     loadProxies();
   }catch(e){showNotice(e.message,'error');}
 }
 async function proxyCheckAll(){
   termOpen('proxy check — m365-copilot2api');
-  termLine('正在检测所有代理…');
+  termLine(T('Checking all proxies…'));
   try{
     const d=await api('/api/admin/proxy-pool?action=check',{method:'PUT'});
     const p=d.proxies||[];
@@ -1650,7 +1761,7 @@ async function proxyCheckAll(){
       else termLine('✗ '+x.url+(x.lastError?' — '+x.lastError:''),'err');
     }
     termLine('Finished: '+ok+'/'+p.length+' proxies available.',ok===p.length&&p.length?'ok':'warn');
-    showNotice('健康检查完成','success');loadProxies();
+    showNotice(T('Health check complete'),'success');loadProxies();
   }catch(e){termLine('Check failed: '+e.message,'err');}
 }
 async function proxyTest(){
@@ -1662,9 +1773,9 @@ async function loadModelTest(){
   try{
     const [md, ac]=await Promise.all([api('/api/admin/models'), api('/api/accounts').catch(()=>({accounts:[]}))]);
     const models=md.data||[];
-    const sel=$('modelTestAccount'); sel.innerHTML='<option value="">自动选择账号</option>'+(ac.accounts||[]).map(a=>`<option value="${esc(a.id)}">${esc(a.email||a.id)} ${a.status==='cooldown'?'(冷却)':''}</option>`).join('');
+    const sel=$('modelTestAccount'); sel.innerHTML=`<option value="">${T('Auto-select account')}</option>`+(ac.accounts||[]).map(a=>`<option value="${esc(a.id)}">${esc(a.email||a.id)} ${a.status==='cooldown'?T('(cooldown)'):''}</option>`).join('');
     if(!models.length){$('modelTestRows').innerHTML='<tr><td colspan="4" class="empty">No models available</td></tr>';return;}
-    $('modelTestRows').innerHTML=models.map(m=>`<tr data-model="${esc(m.id)}"><td><b>${esc(m.id)}</b></td><td><span class="status"><i></i>Not tested</span></td><td style="font-size:12px;color:var(--muted)">-</td><td style="font-size:12px;color:var(--muted)"><button class="btn-sm btn" onclick="modelTestOne('${esc(m.id)}', this.closest('tr'))">测试</button></td></tr>`).join('');
+    $('modelTestRows').innerHTML=models.map(m=>`<tr data-model="${esc(m.id)}"><td><b>${esc(m.id)}</b></td><td><span class="status"><i></i>Not tested</span></td><td style="font-size:12px;color:var(--muted)">-</td><td style="font-size:12px;color:var(--muted)"><button class="btn-sm btn" onclick="modelTestOne('${esc(m.id)}', this.closest('tr'))">${T('Test')}</button></td></tr>`).join('');
   }catch(e){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=4;td.className='empty';td.textContent=e.message;tr.append(td);$('modelTestRows').replaceChildren(tr);}
 }
 async function modelTestOne(id,row){
@@ -1678,7 +1789,7 @@ async function modelTestOne(id,row){
   try{
     const d=await api('/api/admin/models/test',{method:'POST',body:JSON.stringify({model:id, account_id:accountId})});
     const ms=Math.round(performance.now()-start);
-    const content=d.reply||'（空回复）';
+    const content=d.reply||T('(empty reply)');
     badge.innerHTML='<span class="status online"><i></i>Healthy</span>';
     lat.textContent=ms+' ms';
     reply.textContent=String(content).slice(0,80);
@@ -1690,12 +1801,12 @@ async function modelTestOne(id,row){
 }
 async function modelTestAll(){
   const rows=[...document.querySelectorAll('#modelTestRows tr[data-model]')];
-  if(!rows.length){showNotice('请先加载模型列表','error');return;}
+  if(!rows.length){showNotice(T('Please load the model list first'),'error');return;}
   for(let i=0;i<rows.length;i++){
     modelTestOne(rows[i].dataset.model,rows[i]);
     await new Promise(r=>setTimeout(r,250));
   }
-  showNotice('模型测试完成','success');
+  showNotice(T('Model test complete'),'success');
 }
 
 async function loadSettings(){
@@ -1714,7 +1825,7 @@ async function saveSettings(){
     if(listen)body.listenAddress=listen;
     if(timeout)body.chatTimeoutSeconds=parseInt(timeout);
     await api('/api/admin/settings',{method:'PUT',body:JSON.stringify(body)});
-    showNotice('设置已保存','success');
+    showNotice(T('Settings saved'),'success');
   }catch(e){showNotice(e.message,'error');}
 }
 
