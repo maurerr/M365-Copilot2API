@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -157,6 +159,11 @@ type Server struct {
 	convCache            *conversationCache
 	lastHealthyAccount   string
 	contextAffinity      *contextAffinity
+	poolWarmMu           sync.Mutex
+	poolWarmRound        uint64
+	poolWarmSucceeded    map[string]uint64
+	poolWarmDials        uint64
+	poolWarmSkippedCool  uint64
 }
 
 const maxResponsesPerTenant = 256
@@ -280,8 +287,14 @@ func (s *Server) PreheatPool() {
 		if acc.OID == "" {
 			continue
 		}
+		// Warm through the account's own client so a proxy-bound account warms
+		// its proxy pool instead of leaking a direct connection past the proxy.
+		client := s.accountClient(acc.ID)
+		if client == nil || client.Pool == nil {
+			continue
+		}
 		for i := 0; i < 2; i++ {
-			go func(a auth.AccountToken) {
+			go func(a auth.AccountToken, cl *chathub.Client) {
 				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 				defer cancel()
 				reqID := uuid.NewString()
@@ -291,8 +304,8 @@ func (s *Server) PreheatPool() {
 				if err != nil {
 					return
 				}
-				s.chat.Pool.Warm(ctx, chathub.Account{AccessToken: a.AccessToken, OID: a.OID, TID: a.TID}, wsURL)
-			}(acc)
+				cl.Pool.Warm(ctx, chathub.Account{AccessToken: a.AccessToken, OID: a.OID, TID: a.TID}, wsURL)
+			}(acc, client)
 		}
 	}
 }
@@ -312,6 +325,167 @@ func (s *Server) InitM365CloudClient() {
 	}
 	InitM365CloudClient(clientID, acc.TID, acc.RefreshToken)
 	log.Printf("[m365-cloud] client initialized for account %s", acc.Email)
+}
+
+// keepPoolWarm re-warms the accounts most likely to serve the next requests,
+// in least-recently-warmed order, skipping cooled-down and picked-over ones.
+// Each account holds at most maxPoolPerKey*concurrency shed-load margin of
+// warmed sockets, but never more than it can actually use before the 2-minute
+// TTL expires.
+func (s *Server) keepPoolWarm() {
+	if s.chat == nil || s.chat.Pool == nil {
+		return
+	}
+	accounts := s.tokens.List()
+	if len(accounts) == 0 {
+		return
+	}
+	cands := make([]auth.AccountToken, 0, len(accounts))
+	now := time.Now()
+	s.poolWarmMu.Lock()
+	s.poolWarmRound++
+	s.poolWarmMu.Unlock()
+	cfg := s.settings.get()
+	for _, a := range accounts {
+		if a.OID == "" || a.TID == "" {
+			oid, tid := extractOIDTID(a.AccessToken)
+			a.OID, a.TID = oid, tid
+		}
+		// Skip accounts unavailable for scheduling, already cooling down, about
+		// to be cooled, or whose token is expired: warming them either cannot
+		// serve traffic or keeps hammering an upstream that just said back off.
+		if a.OID == "" || a.TID == "" ||
+			!s.tokens.ScheduleEnabled(a.ID) ||
+			!s.accountPool.Available(a.ID) ||
+			(!a.ExpiresAt.IsZero() && a.ExpiresAt.Before(now)) {
+			continue
+		}
+		if attempts, limited, _ := s.accountPool.QuotaDetail(a.ID); limited || attempts > 0 {
+			s.poolWarmMu.Lock()
+			s.poolWarmSkippedCool++
+			s.poolWarmMu.Unlock()
+			continue
+		}
+		client := s.accountClient(a.ID)
+		if client == nil || client.Pool == nil {
+			continue
+		}
+		cands = append(cands, a)
+	}
+	if len(cands) == 0 {
+		return
+	}
+	sort.Slice(cands, func(i, j int) bool {
+		return s.warmGeneration(cands[i].ID) < s.warmGeneration(cands[j].ID)
+	})
+	// Refill only the neediest accounts, capped so a cold start does not dump
+	// dozens of handshakes at once; the keeper runs every 90s and tops up again.
+	budget := 8
+	for _, acc := range cands {
+		if budget <= 0 {
+			break
+		}
+		need := s.poolRefillNeed(acc)
+		if need <= 0 {
+			continue
+		}
+		if need > budget {
+			need = budget
+		}
+		budget -= need
+		for i := 0; i < need; i++ {
+			go func(a auth.AccountToken, cl *chathub.Client) {
+				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer cancel()
+				wsURL, err := chathub.BuildWSURL(chathub.Account{AccessToken: a.AccessToken, OID: a.OID, TID: a.TID}, uuid.NewString(), uuid.NewString(), uuid.NewString(), cfg.LicenseType, cfg.Scenario)
+				if err != nil {
+					return
+				}
+				ok := cl.Pool.Warm(ctx, chathub.Account{AccessToken: a.AccessToken, OID: a.OID, TID: a.TID}, wsURL)
+				s.noteWarmResult(a.ID, ok)
+			}(acc, s.accountClient(acc.ID))
+		}
+	}
+}
+
+// warmGeneration returns how many keeper rounds have already refilled this
+// account, so keepPoolWarm always serves the stalest accounts first.
+func (s *Server) warmGeneration(accountID string) uint64 {
+	s.poolWarmMu.Lock()
+	defer s.poolWarmMu.Unlock()
+	if s.poolWarmSucceeded == nil {
+		s.poolWarmSucceeded = map[string]uint64{}
+	}
+	return s.poolWarmSucceeded[accountID]
+}
+
+// noteWarmResult records one keeper dial so the next round prefers accounts
+// that have not been warmed yet, and publishes keeper counters for the admin
+// dashboard.
+func (s *Server) noteWarmResult(accountID string, ok bool) {
+	if !ok || accountID == "" {
+		return
+	}
+	s.poolWarmMu.Lock()
+	if s.poolWarmSucceeded == nil {
+		s.poolWarmSucceeded = map[string]uint64{}
+	}
+	s.poolWarmSucceeded[accountID]++
+	s.poolWarmDials++
+	s.poolWarmMu.Unlock()
+}
+
+// PoolWarmStats snapshots the keeper counters for admin visibility.
+func (s *Server) PoolWarmStats() map[string]any {
+	s.poolWarmMu.Lock()
+	defer s.poolWarmMu.Unlock()
+	byAccount := make(map[string]uint64, len(s.poolWarmSucceeded))
+	for k, v := range s.poolWarmSucceeded {
+		byAccount[k] = v
+	}
+	return map[string]any{
+		"refills":       s.poolWarmDials,
+		"skipped_cool":  s.poolWarmSkippedCool,
+		"rounds":        s.poolWarmRound,
+		"by_account_id": byAccount,
+	}
+}
+
+// poolRefillNeed returns how many sockets this account still needs so that it
+// can serve in-flight plus queued demand from the pool instead of dialing.
+// It is intentionally conservative: at most maxPoolPerKey*concurrency shed-load
+// slots, and never more than the account can plausibly consume within one
+// 2-minute TTL.
+func (s *Server) poolRefillNeed(acc auth.AccountToken) int {
+	client := s.accountClient(acc.ID)
+	if client == nil || client.Pool == nil {
+		return 0
+	}
+	have := client.Pool.Idle(acc.OID, acc.TID)
+	want := chathub.MaxPoolPerKey
+	need := want - have
+	if need < 0 {
+		need = 0
+	}
+	return need
+}
+
+// StartPoolKeeper keeps a small set of pooled WebSocket connections warm so the
+// first request of a session does not pay a fresh dial. It stops when ctx is
+// cancelled during shutdown.
+func (s *Server) StartPoolKeeper(ctx context.Context) {
+	go func() {
+		t := time.NewTicker(90 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				s.keepPoolWarm()
+			}
+		}
+	}()
 }
 
 func (s *Server) RefreshExpiredTokens() {
@@ -337,6 +511,7 @@ func (s *Server) Routes() http.Handler {
 	m.HandleFunc("/api/admin/models/test", s.adminModelTest)
 	m.HandleFunc("/api/admin/models/sync", s.adminModelSync)
 	m.HandleFunc("/api/admin/settings", s.adminSettings)
+	m.HandleFunc("/api/metrics", s.adminMetrics)
 	m.HandleFunc("/api/admin/proxy-pool", s.proxyPool)
 	m.HandleFunc("/api/admin/deployments", s.deployments)
 	m.HandleFunc("/api/admin/deployment", s.deploymentAction)
@@ -1084,77 +1259,225 @@ func (s *Server) callbackPKCE(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// resolveWaitWindow bounds how long account selection will wait for a cooling
+// account to recover before giving up and reporting the failure.
+const (
+	resolveWaitWindow = 12 * time.Second
+	resolveMaxWait    = 5 * time.Second
+	// Several jittered attempts, not one: under burst load every account can be
+	// cooling simultaneously, and a single fixed wait just makes all queued
+	// requests retry together and collide again.
+	resolveWaitAttempts = 3
+)
+
 func (s *Server) resolveAccount(accountID string) (auth.AccountToken, error) {
-	if accountID == "" {
-		// Failover mode: prefer the last healthy account, only rotate on failure
-		s.mu.Lock()
-		preferred := s.lastHealthyAccount
-		s.mu.Unlock()
-		if preferred != "" && s.accountAvailable(preferred) && s.accountPool.Available(preferred) && s.accountConcurrency.Available(preferred) {
-			if acc, err := s.tokens.EnsureValid(preferred); err == nil {
-				accountID = preferred
-				return acc, nil
-			}
-		}
-		// No preferred account or it's unavailable; fall back to round-robin
-		acc, ok := s.tokens.Next()
-		if !ok {
-			return auth.AccountToken{}, fmt.Errorf("no accounts; login first")
-		}
-		accountID = acc.ID
-		for i := 0; !s.accountAvailable(accountID) && i < maxAccountProbe; i++ {
-			acc, ok = s.tokens.Next()
+	return s.resolveAccountCtx(context.Background(), accountID)
+}
+
+// resolveAccountCtx is resolveAccount with request cancellation and a bounded
+// wait for imminent recovery.
+func (s *Server) resolveAccountCtx(ctx context.Context, accountID string) (auth.AccountToken, error) {
+	return s.resolveAccountUntil(ctx, accountID, time.Now().Add(resolveWaitWindow))
+}
+
+// jitterDuration returns a random duration in [0, max). It uses crypto/rand
+// because the caller is spreading out many concurrent retries and a
+// predictable backoff would defeat that.
+func jitterDuration(max time.Duration) time.Duration {
+	if max <= 0 {
+		return 0
+	}
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return max / 2
+	}
+	n := binary.BigEndian.Uint64(b[:])
+	return time.Duration(n % uint64(max))
+}
+
+// tryResolve makes one pass over the enabled accounts in failover order and
+// returns the first one that validates. It is a single pass on purpose: the
+// caller decides whether to wait and try again.
+func (s *Server) tryResolve(ctx context.Context) (auth.AccountToken, bool) {
+	accounts := s.tokens.List()
+	if len(accounts) == 0 {
+		return auth.AccountToken{}, false
+	}
+	s.mu.Lock()
+	preferred := s.lastHealthyAccount
+	s.mu.Unlock()
+	// Visit each account at most once. Without this the round-robin would
+	// re-probe the same unvalidatable account up to maxAccountProbe times,
+	// firing a burst of token refreshes at it.
+	tried := make(map[string]bool, len(accounts))
+	// Next() rotates, so len(accounts) iterations visit every account; the
+	// doubled bound is only a safety net against a stuck cursor.
+	for i := 0; len(tried) < len(accounts) && i < len(accounts)*2+1; i++ {
+		candidate := ""
+		if i == 0 && preferred != "" && s.accountAvailable(preferred) {
+			candidate = preferred
+		} else {
+			acc, ok := s.tokens.Next()
 			if !ok {
 				break
 			}
-			accountID = acc.ID
+			candidate = acc.ID
 		}
-		if !s.tokens.ScheduleEnabled(accountID) {
+		if candidate == "" || tried[candidate] {
+			continue
+		}
+		tried[candidate] = true
+		if !s.tokens.ScheduleEnabled(candidate) || !s.accountAvailable(candidate) {
+			continue
+		}
+		tok, err := s.tokens.EnsureValid(candidate)
+		if err == nil {
+			s.mu.Lock()
+			s.lastHealthyAccount = candidate
+			s.mu.Unlock()
+			return tok, true
+		}
+		s.markResolveFailure(candidate, err)
+	}
+	return auth.AccountToken{}, false
+}
+
+// resolveAccountUntil selects a usable account. When every candidate is
+// momentarily cooling down it waits for the earliest recovery and retries
+// (bounded by deadline) instead of failing the request, so a client never has
+// to implement its own retry/backoff for a blip the gateway can absorb.
+func (s *Server) resolveAccountUntil(ctx context.Context, accountID string, deadline time.Time) (auth.AccountToken, error) {
+	if accountID == "" {
+		// Failover mode: try the last healthy account first, then round-robin.
+		// Every candidate is validated with EnsureValid before use, so an account
+		// whose token has gone bad cannot short-circuit the failover and leave a
+		// healthy account unused.
+		accounts := s.tokens.List()
+		if len(accounts) == 0 {
+			return auth.AccountToken{}, fmt.Errorf("no accounts; login first")
+		}
+		enabled := 0
+		for _, a := range accounts {
+			if s.tokens.ScheduleEnabled(a.ID) {
+				enabled++
+			}
+		}
+		if enabled == 0 {
 			return auth.AccountToken{}, fmt.Errorf("no accounts enabled for scheduling")
 		}
-		if !s.accountPool.Available(accountID) {
-			until := s.accountPool.EarliestRecovery()
-			retry := int(time.Until(until).Seconds())
-			if retry < 5 {
-				retry = 5
-			}
-			// A local network failure is not a quota problem: report 503 with a
-			// distinct error code instead of masquerading as 429 rate limiting
-			// (issue #79).
-			if cat, at := s.accountPool.LastCategory(); time.Since(at) < 5*time.Minute && IsTransportCategory(cat) {
-				return auth.AccountToken{}, &UpstreamHTTPError{Status: 503, ErrorCode: "network_error", RetryAfter: retry, Body: "all accounts cooling down after local network errors (last: " + string(cat) + "); check DNS/IPv6/proxy connectivity"}
-			}
-			return auth.AccountToken{}, &UpstreamHTTPError{Status: 429, RetryAfter: retry, Body: "all accounts are cooling down; try again later"}
+		if tok, ok := s.tryResolve(ctx); ok {
+			return tok, nil
 		}
-		if !s.accountConcurrency.Available(accountID) {
-			return auth.AccountToken{}, &UpstreamHTTPError{Status: 429, RetryAfter: 1, Body: "all accounts are at their concurrency limit; try again shortly"}
+		// No account could be validated. Under burst load every account can be
+		// cooling at the same instant, so a single fixed wait makes all the
+		// queued requests retry in lockstep and collide again. Back off with
+		// jitter across several short attempts instead, so the retries spread
+		// out and the accounts can drain.
+		until := s.accountPool.EarliestRecovery()
+		if !until.IsZero() {
+			for attempt := 0; attempt < resolveWaitAttempts; attempt++ {
+				wait := time.Until(until)
+				if wait > resolveMaxWait || time.Now().Add(wait).After(deadline) {
+					break
+				}
+				if wait < 0 {
+					wait = 0
+				}
+				// Jitter on the order of the wait itself keeps concurrent callers
+				// from waking together.
+				wait += jitterDuration(resolveMaxWait / 4)
+				if time.Now().Add(wait).After(deadline) {
+					wait = time.Until(deadline)
+				}
+				timer := time.NewTimer(wait)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return auth.AccountToken{}, ctx.Err()
+				case <-timer.C:
+					if tok, ok := s.tryResolve(ctx); ok {
+						return tok, nil
+					}
+					until = s.accountPool.EarliestRecovery()
+					if until.IsZero() {
+						break
+					}
+				}
+			}
 		}
+		retry := int(time.Until(until).Seconds())
+		if retry < 5 {
+			retry = 5
+		}
+		// Name the reason we actually observed. Only when a real transport
+		// fault is the latest signal do we call it a transport problem; a
+		// quota cooldown is reported as rate limiting rather than disguised as
+		// a network fault, and we never invent connectivity advice.
+		if s.accountPool.AnyRateLimited() {
+			return auth.AccountToken{}, &UpstreamHTTPError{Status: 429, RetryAfter: retry, Body: "all accounts are rate limited by upstream; retry after cooldown"}
+		}
+		if cat, at := s.accountPool.LastCategory(); time.Since(at) < 5*time.Minute && IsTransportCategory(cat) {
+			return auth.AccountToken{}, &UpstreamHTTPError{Status: 503, ErrorCode: "transport_error", RetryAfter: retry, Body: "all accounts cooling down after transport errors (last: " + string(cat) + ")"}
+		}
+		return auth.AccountToken{}, &UpstreamHTTPError{Status: 429, RetryAfter: retry, Body: "all accounts are cooling down; try again later"}
 	}
 	result, err := s.tokens.EnsureValid(accountID)
 	if err == nil {
 		s.mu.Lock()
 		s.lastHealthyAccount = accountID
 		s.mu.Unlock()
+		return result, nil
 	}
+	// EnsureValid accepts an id, oid or email; cool the account under its
+	// canonical id so later availability checks match.
+	canonical := accountID
+	if acc, ok := s.tokens.Get(accountID); ok {
+		canonical = acc.ID
+	}
+	s.markResolveFailure(canonical, err)
 	return result, err
+}
+
+// markResolveFailure cools down an account whose token could not be validated
+// while routing. A rejected refresh token (invalid_grant/AADSTS) needs the
+// account to be re-authenticated, so it is sidelined until it recovers.
+func (s *Server) markResolveFailure(accountID string, err error) {
+	if s == nil || s.accountPool == nil || accountID == "" || err == nil {
+		return
+	}
+	if ClassifyError(err) == CategoryAuthExpired401 {
+		s.accountPool.MarkFailure(accountID, err, 0)
+	}
 }
 
 // nextHealthyAccount returns the next round-robin account that is still
 // healthy, skipping the given id first, and validates its token. Used by the
 // failover path after a rate-limited or auth-failed attempt.
 func (s *Server) nextHealthyAccount(avoidID string) (auth.AccountToken, error) {
-	for i := 0; i < maxAccountProbe; i++ {
+	accounts := s.tokens.List()
+	tried := make(map[string]bool, len(accounts))
+	// Next() rotates, so len(accounts) iterations visit every account; the
+	// doubled bound is only a safety net against a stuck cursor.
+	for i := 0; len(tried) < len(accounts) && i < len(accounts)*2+1; i++ {
 		acc, ok := s.tokens.Next()
 		if !ok {
 			return auth.AccountToken{}, fmt.Errorf("no accounts; login first")
 		}
+		if tried[acc.ID] {
+			continue
+		}
+		tried[acc.ID] = true
 		if avoidID != "" && acc.ID == avoidID {
 			continue
 		}
 		if !s.accountAvailable(acc.ID) {
 			continue
 		}
-		return s.tokens.EnsureValid(acc.ID)
+		tok, err := s.tokens.EnsureValid(acc.ID)
+		if err == nil {
+			return tok, nil
+		}
+		s.markResolveFailure(acc.ID, err)
 	}
 	return auth.AccountToken{}, fmt.Errorf("no healthy account available for failover")
 }
@@ -1221,11 +1544,17 @@ func isThrottledForFailover(err error) bool {
 	if IsRateLimited(err) {
 		return true
 	}
+	// A slow first token is an account-level stall, not a client error: trying
+	// another account is far better for latency than failing after the full
+	// first-token timeout and making the caller start over.
+	if errors.Is(err, chathub.ErrFirstTokenTimeout) {
+		return true
+	}
 	// HAR 报告 06/07：WS_READ_TIMEOUT 是账号级读超时，应触发跨账号转移；
 	// 报告 07 实证上游 422 属可重试成员。共享层传输故障（DNS/TCP/TLS/SOCKS5）
 	// 与 503 不在此列，交给全局熔断快速失败，避免逐账号轮转造成集体冷却。
 	switch ClassifyError(err) {
-	case CategoryWSReadTimeout, CategoryRetryable422:
+	case CategoryWSReadTimeout, CategoryWSWriteTimeout, CategoryRetryable422:
 		return true
 	}
 	return false
@@ -1320,6 +1649,7 @@ func (s *Server) chatOnce(w http.ResponseWriter, r *http.Request) {
 		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "message or attachment required")
 		return
 	}
+	explicitAccount := strings.TrimSpace(body.AccountID) != ""
 	if body.SessionKey != "" {
 		if v, ok := s.sessions.get(body.SessionKey); ok {
 			body.AccountID = firstNonEmpty(body.AccountID, v.AccountID)
@@ -1327,7 +1657,18 @@ func (s *Server) chatOnce(w http.ResponseWriter, r *http.Request) {
 			body.SessionID = firstNonEmpty(body.SessionID, v.SessionID)
 		}
 	}
-	acc, err := s.resolveAccount(body.AccountID)
+	// A sticky session binding that points at an unusable account must not pin
+	// the request to it; fall back to a healthy account with a fresh conversation.
+	if !explicitAccount && body.AccountID != "" && !s.accountUsable(body.AccountID) {
+		log.Printf("[account-route] legacy sticky account %q unavailable, re-routing", body.AccountID)
+		body.AccountID, body.ConversationID, body.SessionID = "", "", ""
+	}
+	acc, err := s.resolveAccountCtx(r.Context(), body.AccountID)
+	if err != nil && !explicitAccount && body.AccountID != "" {
+		log.Printf("[account-route] legacy sticky account %q unusable, re-routing: %v", body.AccountID, err)
+		body.AccountID, body.ConversationID, body.SessionID = "", "", ""
+		acc, err = s.resolveAccountCtx(r.Context(), "")
+	}
 	if err != nil {
 		if isThrottledForFailover(err) {
 			s.writeFailoverExhausted(w, nil)
@@ -1573,13 +1914,14 @@ func (s *Server) adminModelTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		Model string `json:"model"`
+		Model  string `json:"model"`
+		Prompt string `json:"prompt"`
 	}
-	if json.NewDecoder(r.Body).Decode(&b) != nil || strings.TrimSpace(b.Model) == "" {
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024)).Decode(&b) != nil || strings.TrimSpace(b.Model) == "" {
 		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "bad json: model required")
 		return
 	}
-	acc, err := s.resolveAccount("")
+	acc, err := s.resolveAccountCtx(r.Context(), "")
 	if err != nil {
 		writeUpstreamError(w, err)
 		return
@@ -1594,12 +1936,16 @@ func (s *Server) adminModelTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tone, _ := reasoningTone(b.Model, "")
+	prompt := strings.TrimSpace(b.Prompt)
+	if prompt == "" {
+		prompt = `Say "OK" in one word.`
+	}
 	start := time.Now()
 	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(s.settings.get().ChatTimeoutSeconds)*time.Second)
 	defer cancel()
 	testCfg := s.settings.get()
 	res, err := s.chatWithAccount(ctx, acc.ID, chathub.Account{AccessToken: acc.AccessToken, OID: acc.OID, TID: acc.TID}, chathub.Request{
-		Text:         `Say "OK" in one word.`,
+		Text:         prompt,
 		Tone:         tone,
 		LicenseType:  testCfg.LicenseType,
 		Scenario:     testCfg.Scenario,
@@ -1610,6 +1956,9 @@ func (s *Server) adminModelTest(w http.ResponseWriter, r *http.Request) {
 		writeOpenAIError(w, http.StatusBadGateway, "m365_error", upstreamError(err))
 		return
 	}
+	// The probe has no conversation binding, so M365 created a throwaway
+	// conversation; delete it so model tests do not clutter the account.
+	s.dropTransientConversation(res.ConversationID)
 	jsonOut(w, map[string]any{"ok": true, "model": b.Model, "reply": sanitizePublicAssistantTextForModel(res.Text, b.Model), "latency_ms": ms})
 }
 
@@ -1832,6 +2181,10 @@ func (s *Server) openaiChat(w http.ResponseWriter, r *http.Request) {
 		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "bad json")
 		return
 	}
+	// Captured before any sticky mechanism (session key, user session, session
+	// resolver, context affinity) fills body.AccountID, so a later routing
+	// failure can tell an explicit client choice from an automatic binding.
+	explicitAccount := strings.TrimSpace(body.AccountID) != ""
 	responseFormat := body.ResponseFormat
 	effort := body.ReasoningEffort
 	if body.Reasoning != nil && strings.TrimSpace(body.Reasoning.Effort) != "" {
@@ -1941,10 +2294,17 @@ func (s *Server) openaiChat(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[temp-session] copilot_temp_session=true, clearing conversation/session for one-shot request")
 	}
 	answerPrompt := prompt
+	fullAttachments := body.Attachments
 	resolvedConversationID := ""
 	if body.ConversationID == "" && len(body.Messages) > 0 && (body.Metadata == nil || !body.Metadata.CopilotTempSession) {
 		resolved := s.sessionResolver.Resolve(r, &body)
-		if !resolved.IsNew {
+		if !resolved.IsNew && resolved.AccountID != "" && !s.accountUsable(resolved.AccountID) {
+			// The matched session is pinned to an account that is no longer
+			// usable. Ignore the match so routing picks a healthy account; the
+			// stored conversation belongs to the dead account and must not be
+			// reused.
+			log.Printf("[session-resolver] matched account %q unavailable; ignoring match", resolved.AccountID)
+		} else if !resolved.IsNew {
 			resolvedConversationID = resolved.ConversationID
 			body.ConversationID = resolved.ConversationID
 			body.SessionID = resolved.SessionID
@@ -1967,7 +2327,35 @@ func (s *Server) openaiChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	accountID := body.AccountID
-	acc, err := s.resolveAccount(accountID)
+	// A sticky (non-explicit) binding that points at an unusable account must be
+	// dropped so routing can pick a healthy one. The request also has to be sent
+	// with the full prompt, not the incremental slice that was prepared for the
+	// dead account's conversation.
+	rerouteSticky := func() {
+		// Only drop the binding when the account is genuinely unusable; a
+		// transient resolve failure must not wipe the conversation ownership.
+		if !s.accountUsable(accountID) {
+			s.contextAffinity.ForgetAccount(accountID)
+		}
+		accountID = ""
+		body.AccountID = ""
+		body.ConversationID = ""
+		body.SessionID = ""
+		answerPrompt = prompt
+		body.Attachments = fullAttachments
+	}
+	if !explicitAccount && accountID != "" && !s.accountUsable(accountID) {
+		log.Printf("[account-route] sticky account %q already unavailable, re-routing", accountID)
+		rerouteSticky()
+	}
+	acc, err := s.resolveAccountCtx(r.Context(), accountID)
+	if err != nil && !explicitAccount && accountID != "" {
+		// The sticky binding could not be resolved; re-route so the request still
+		// has a chance on a healthy account instead of failing outright.
+		log.Printf("[account-route] sticky account %q unusable, re-routing: %v", accountID, err)
+		rerouteSticky()
+		acc, err = s.resolveAccountCtx(r.Context(), "")
+	}
 	if err != nil {
 		log.Printf("[account-route] resolve failed requested=%q err=%v", accountID, err)
 		if isThrottledForFailover(err) {
@@ -2200,52 +2588,23 @@ func (s *Server) openaiChat(w http.ResponseWriter, r *http.Request) {
 				return nil
 			}
 			text.WriteString(ev.Text)
-			pending.WriteString(ev.Text)
-			v := pending.String()
 			// Detect fenced code blocks (tool calls) that must not be emitted as text.
 			// They will be caught by fencedToolCalls after the stream completes.
-			if strings.Contains(v, "```bash") || strings.Contains(v, "\"command\"") {
+			if strings.Contains(pending.String()+ev.Text, "```bash") || strings.Contains(pending.String()+ev.Text, "\"command\"") {
+				pending.WriteString(ev.Text)
 				return nil
 			}
-			// If we see an opening ```, buffer until the closing ``` or until we're sure it's not a tool call.
-			if i := strings.Index(v, "```"); i >= 0 {
-				after := v[i+3:]
-				// If there's a closing ```, emit everything up to and including the block.
-				if j := strings.Index(after, "```"); j >= 0 {
-					closeIdx := i + 3 + j + 3
-					if err := emitText(v[:i]); err != nil {
-						return err
-					}
-					pending.Reset()
-					pending.WriteString(v[i:closeIdx])
-					return nil
-				}
-				// Opening ``` without closing yet: emit everything before it, keep the fence buffered.
-				if err := emitText(v[:i]); err != nil {
-					return err
-				}
-				pending.Reset()
-				pending.WriteString(v[i:])
-				return nil
+			// Hold back only a fence that is a real tool call; an ordinary code
+			// block is released in place so reply order is preserved.
+			hold := func(fence string) bool {
+				return len(fencedToolCalls(fence, toolMaps, body.ToolChoice)) > 0
 			}
-			// No fence detected: emit immediately with a small tail buffer for fence detection.
-			// This replaces the old 8-rune threshold with a 3-rune buffer (enough to detect "```").
-			if runeCount := utf8.RuneCountInString(v); runeCount > 3 {
-				cut := 0
-				seen := 0
-				for i := range v {
-					if seen == runeCount-3 {
-						cut = i
-						break
-					}
-					seen++
-				}
-				if err := emitText(v[:cut]); err != nil {
-					return err
-				}
-				pending.Reset()
-				pending.WriteString(v[cut:])
+			emitted, held := fenceStream(pending.String(), ev.Text, 3, hold)
+			if err := emitText(emitted); err != nil {
+				return err
 			}
+			pending.Reset()
+			pending.WriteString(held)
 			return nil
 		})
 		if err != nil && text.Len() == 0 && len(streamedTools) == 0 && !convReused && body.AccountID == "" && (body.ConversationID == "" || body.ConversationID == resolvedConversationID) && isThrottledForFailover(err) {
@@ -2430,7 +2789,14 @@ func (s *Server) openaiChat(w http.ResponseWriter, r *http.Request) {
 				msg = "M365 content policy flagged this request as offensive"
 			}
 			msg = sanitizePublicInternalText(msg)
-			_ = sseRaw(r.Context(), w, flusher, "data: "+mustJSON(map[string]any{"error": map[string]any{"message": msg, "code": "rate_limit"}})+"\n\n")
+			// Nothing has been written yet, so the failure can still be reported
+			// with a real HTTP status. Returning 200 with an empty body here
+			// makes clients treat a failed turn as a successful empty answer.
+			if !sw.isCommitted() {
+				writeOpenAIError(w, upstreamStatus(err), streamErrorCode(err), msg)
+				return
+			}
+			_ = sseRaw(r.Context(), w, flusher, sseUpstreamError(r, flusher, err))
 			_ = sseRaw(r.Context(), w, flusher, "data: [DONE]\n\n")
 			return
 		}
@@ -2498,6 +2864,9 @@ func (s *Server) openaiChat(w http.ResponseWriter, r *http.Request) {
 				s.userSessions.Put(tenantFromRequest(r), body.User, res.ConversationID, res.SessionID, acc.ID)
 			}
 			s.bindConversation(acc, &body, r, res, answerPrompt, startedAt)
+			if body.SessionKey != "" {
+				s.sessions.upsert(conversation{ID: body.SessionKey, AccountID: acc.ID, ConversationID: res.ConversationID, SessionID: res.SessionID, Title: prompt})
+			}
 			s.storeConvCache(acc.ID, convCacheModel, res, tone, body.Messages, convReused)
 			return
 		}
@@ -2525,6 +2894,9 @@ func (s *Server) openaiChat(w http.ResponseWriter, r *http.Request) {
 			s.userSessions.Put(tenantFromRequest(r), body.User, res.ConversationID, res.SessionID, acc.ID)
 		}
 		s.bindConversation(acc, &body, r, res, answerPrompt, startedAt)
+		if body.SessionKey != "" {
+			s.sessions.upsert(conversation{ID: body.SessionKey, AccountID: acc.ID, ConversationID: res.ConversationID, SessionID: res.SessionID, Title: prompt})
+		}
 		s.storeConvCache(acc.ID, convCacheModel, res, tone, body.Messages, convReused)
 		return
 	}
@@ -2800,10 +3172,10 @@ APPLICATION_REQUEST_AND_EVIDENCE:
 			}
 			msg = sanitizePublicInternalText(msg)
 			if !sw2.isCommitted() {
-				writeOpenAIError(w, http.StatusBadGateway, "upstream_error", msg)
+				writeOpenAIError(w, upstreamStatus(err), streamErrorCode(err), msg)
 				return
 			}
-			_ = sseRaw(r.Context(), w, flusher, "data: "+mustJSON(map[string]any{"error": map[string]any{"message": msg, "code": "rate_limit"}})+"\n\n")
+			_ = sseRaw(r.Context(), w, flusher, sseUpstreamError(r, flusher, err))
 		}
 		pt := EstimateTokens(prompt)
 		ct := EstimateTokens(res.Text)
@@ -3014,9 +3386,11 @@ APPLICATION_REQUEST_AND_EVIDENCE:
 			return
 		}
 	}
-	// Recover natural-language tool intent in native mode, and repair any
-	// structured event that failed the declared-name/schema boundary.
-	if (planningMode == "native" || invalidDetectedTool) && len(toolMaps) > 0 && fmt.Sprint(body.ToolChoice) != "none" {
+	// Repair a structured event that failed the declared-name/schema boundary,
+	// and honor an explicit tool_choice=required that the model answered with
+	// prose instead of a call. A plain text answer with tool_choice=auto is a
+	// legitimate "no tool" decision and never triggers a second model call.
+	if (invalidDetectedTool || (planningMode == "native" && fmt.Sprint(body.ToolChoice) == "required")) && len(toolMaps) > 0 && fmt.Sprint(body.ToolChoice) != "none" {
 		routePrompt := modelToolRouterPrompt(prompt+"\n"+ledger.RouterContext(), toolMaps, body.ToolChoice)
 		routeRes, routeErr := s.chatWithAccount(ctx, acc.ID, account, chathub.Request{Text: routePrompt, Tone: tone, Attachments: body.Attachments, LicenseType: toolCfg.LicenseType, Scenario: toolCfg.Scenario})
 		if routeErr == nil {

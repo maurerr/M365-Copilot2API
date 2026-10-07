@@ -32,6 +32,7 @@ const (
 	CategoryTLS                ErrorCategory = "TLS"
 	CategoryWSHandshake        ErrorCategory = "WS_HANDSHAKE"
 	CategoryWSReadTimeout      ErrorCategory = "WS_READ_TIMEOUT"
+	CategoryWSWriteTimeout     ErrorCategory = "WS_WRITE_TIMEOUT"
 	CategoryUpstreamStructured ErrorCategory = "UPSTREAM_STRUCTURED"
 	CategoryClientCanceled     ErrorCategory = "CLIENT_CANCELED"
 	CategoryGlobalUnavailable  ErrorCategory = "GLOBAL_UNAVAILABLE"
@@ -116,6 +117,10 @@ func ClassifyError(err error) ErrorCategory {
 				return CategoryWSHandshake
 			case "WS_READ_TIMEOUT":
 				return CategoryWSReadTimeout
+			case "WS_WRITE_TIMEOUT":
+				// Same transport class and failover behaviour as a read timeout,
+				// but kept as its own kind so the reported reason is accurate.
+				return CategoryWSWriteTimeout
 			case "CLIENT_CANCELED":
 				return CategoryClientCanceled
 			}
@@ -155,10 +160,18 @@ func ClassifyError(err error) ErrorCategory {
 			return CategoryTCP
 		}
 	}
+	msg := strings.ToLower(err.Error())
+	// A rejected refresh token is an auth failure, not a transient transport
+	// fault; it stays until the account is re-authenticated. Match only the
+	// canonical OAuth rejection signals so a service-wide error (e.g. a bad
+	// client secret, AADSTS7000215) is not mistaken for a per-account issue.
+	// Checked before the global circuit so an open circuit cannot mask it.
+	if strings.Contains(msg, "invalid_grant") || strings.Contains(msg, "token_expired") {
+		return CategoryAuthExpired401
+	}
 	if globalCircuit != nil && globalCircuit.IsOpen() {
 		return CategoryGlobalUnavailable
 	}
-	msg := strings.ToLower(err.Error())
 	switch {
 	case strings.Contains(msg, "socks"):
 		return CategorySOCKS5
@@ -229,7 +242,7 @@ func IsTransientTransport(err error) bool {
 		return false
 	}
 	switch ClassifyError(err) {
-	case CategorySOCKS5, CategoryDNS, CategoryTCP, CategoryTLS, CategoryWSHandshake, CategoryWSReadTimeout, CategoryOverload503:
+	case CategorySOCKS5, CategoryDNS, CategoryTCP, CategoryTLS, CategoryWSHandshake, CategoryWSReadTimeout, CategoryWSWriteTimeout, CategoryOverload503:
 		return true
 	}
 	return false
@@ -346,7 +359,7 @@ func CooldownForCategory(cat ErrorCategory, retryAfter int, attempt int) time.Du
 		return 30 * time.Second
 	case CategoryWSHandshake:
 		return 15 * time.Second
-	case CategoryWSReadTimeout:
+	case CategoryWSReadTimeout, CategoryWSWriteTimeout:
 		return 30 * time.Second
 	case CategoryUpstreamStructured:
 		return 10 * time.Second
@@ -418,7 +431,7 @@ func (g *globalCircuitState) Record(err error) {
 	}
 	cat := ClassifyError(err)
 	switch cat {
-	case CategorySOCKS5, CategoryDNS, CategoryTCP, CategoryTLS, CategoryWSHandshake, CategoryWSReadTimeout:
+	case CategorySOCKS5, CategoryDNS, CategoryTCP, CategoryTLS, CategoryWSHandshake, CategoryWSReadTimeout, CategoryWSWriteTimeout:
 	default:
 		if cat == CategoryClientCanceled || cat == CategoryGlobalUnavailable {
 			return
@@ -507,10 +520,12 @@ func (h *accountHealth) LastCategory() (ErrorCategory, time.Time) {
 }
 
 // IsTransportCategory reports whether the category is a local/transport
-// failure rather than an upstream quota or auth rejection.
+// failure rather than an upstream quota or auth rejection. Upstream overload
+// (503) is deliberately excluded: it is a server-side capacity signal, not a
+// local connectivity fault, so it must not be reported as network_error.
 func IsTransportCategory(cat ErrorCategory) bool {
 	switch cat {
-	case CategorySOCKS5, CategoryDNS, CategoryTCP, CategoryTLS, CategoryWSHandshake, CategoryWSReadTimeout, CategoryOverload503:
+	case CategorySOCKS5, CategoryDNS, CategoryTCP, CategoryTLS, CategoryWSHandshake, CategoryWSReadTimeout, CategoryWSWriteTimeout:
 		return true
 	}
 	return false
@@ -690,6 +705,19 @@ func (h *accountHealth) MarkFailure(accountID string, err error, window time.Dur
 		h.mu.Unlock()
 		return
 	}
+	// 429 keeps the upstream-advised window: RetryAfter wins when present,
+	// otherwise the backoff grows with consecutive attempts. MarkSuccess clears
+	// quotaAttempts, so a recovered account returns to the short base window.
+	if cat == CategoryQuota429 {
+		h.mu.Lock()
+		h.quotaAttempts[accountID] = h.quotaAttempts[accountID] + 1
+		h.limited[accountID] = true
+		delete(h.authFail, accountID)
+		delete(h.authFailReason, accountID)
+		h.cooldown[accountID] = time.Now().Add(CooldownForCategory(cat, RetryAfterSeconds(err), h.quotaAttempts[accountID]))
+		h.mu.Unlock()
+		return
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	switch cat {
@@ -735,22 +763,13 @@ func (h *accountHealth) MarkFailure(accountID string, err error, window time.Dur
 			}
 		}
 		return
-	case CategoryQuota429:
-		delete(h.authFail, accountID)
-		delete(h.authFailReason, accountID)
-		h.limited[accountID] = true
-		attempt := h.quotaAttempts[accountID] + 1
-		h.quotaAttempts[accountID] = attempt
-		cd := CooldownForCategory(cat, RetryAfterSeconds(err), attempt)
-		h.cooldown[accountID] = time.Now().Add(cd)
-		return
 	case CategoryOverload503:
 		delete(h.authFail, accountID)
 		delete(h.authFailReason, accountID)
 		delete(h.limited, accountID)
 		h.cooldown[accountID] = time.Now().Add(CooldownForCategory(cat, RetryAfterSeconds(err), 1))
 		return
-	case CategorySOCKS5, CategoryDNS, CategoryTCP, CategoryTLS, CategoryWSHandshake, CategoryWSReadTimeout:
+	case CategorySOCKS5, CategoryDNS, CategoryTCP, CategoryTLS, CategoryWSHandshake, CategoryWSReadTimeout, CategoryWSWriteTimeout:
 		delete(h.authFail, accountID)
 		delete(h.authFailReason, accountID)
 		delete(h.limited, accountID)
@@ -840,6 +859,20 @@ func (h *accountHealth) Available(accountID string) bool {
 		return false
 	}
 	return true
+}
+
+// QuotaDetail reports how many consecutive 429s the account has accumulated
+// and until when it is cooling down. The pool keeper reads it to stop warming
+// freshly-throttled accounts sooner than the generic Available() check, which
+// only hides them after their cooldown is registered.
+func (h *accountHealth) QuotaDetail(accountID string) (attempts int, limited bool, until time.Time) {
+	if h == nil || accountID == "" {
+		return 0, false, time.Time{}
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.cleanupExpiredCooldownLocked(accountID)
+	return h.quotaAttempts[accountID], h.limited[accountID], h.cooldown[accountID]
 }
 
 func (h *accountHealth) CooldownUntil(accountID string) (time.Time, bool) {
@@ -976,4 +1009,19 @@ func (h *accountHealth) EarliestRecovery() time.Time {
 		}
 	}
 	return earliest
+}
+
+// AnyRateLimited reports whether any cooling account was sidelined by an
+// upstream quota signal. It separates a quota exhaustion from a transport
+// outage when every account is cooling, so the error we return names the
+// reason we actually observed instead of guessing.
+func (h *accountHealth) AnyRateLimited() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for id := range h.cooldown {
+		if h.limited[id] {
+			return true
+		}
+	}
+	return false
 }

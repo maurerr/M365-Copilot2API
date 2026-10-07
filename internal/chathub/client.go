@@ -43,6 +43,14 @@ var contentPolicyPatterns = []string{
 	"i'm sorry, i can't respond",
 	"i'm sorry, i cannot respond",
 	"i apologize, i cannot",
+	// Copilot's canned "could not answer" fallback. Passing this through as a
+	// normal assistant turn hides the real failure from the caller.
+	"wasn't able to respond to that",
+	"wasn't able to respond",
+	"unable to respond to that",
+	"something else i can help with",
+	"抱歉，我无法回答这个问题",
+	"抱歉，我现在无法回答",
 }
 
 func IsContentPolicyBlock(text string) bool {
@@ -97,11 +105,19 @@ func classifyTransportError(err error) string {
 	case strings.Contains(msg, "handshake"):
 		return "WS_HANDSHAKE"
 	case strings.Contains(msg, "i/o timeout") || strings.Contains(msg, "deadline exceeded") || strings.Contains(msg, "timeout") && strings.Contains(msg, "read"):
+		// A write timeout is not a read timeout: failing to send the payload and
+		// failing to receive a reply are different faults to diagnose.
+		if strings.Contains(msg, "write") {
+			return "WS_WRITE_TIMEOUT"
+		}
 		return "WS_READ_TIMEOUT"
 	case strings.Contains(msg, "connection refused") || strings.Contains(msg, "connection reset") || strings.Contains(msg, "broken pipe") || strings.Contains(msg, "network is unreachable") || strings.Contains(msg, "connection was forcibly closed"):
 		return "TCP"
 	default:
 		if strings.Contains(msg, "timeout") {
+			if strings.Contains(msg, "write") {
+				return "WS_WRITE_TIMEOUT"
+			}
 			return "WS_READ_TIMEOUT"
 		}
 		return "TCP"

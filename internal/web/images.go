@@ -73,7 +73,23 @@ func (s *Server) imageGenerations(w http.ResponseWriter, r *http.Request) {
 		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "response_format must be url or b64_json")
 		return
 	}
-	acc, err := s.resolveAccount(firstNonEmpty(b.AccountID, b.User))
+	// Only the advertised image models may drive the Flux graphic-art pipeline;
+	// a chat model here would otherwise be silently accepted and embedded in
+	// the prompt (issue: images endpoint must honor the model).
+	if b.Model != "" && !isImageModel(b.Model) {
+		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "model "+b.Model+" does not support image generation; use flux-3 or flux-4")
+		return
+	}
+	explicitAccount := strings.TrimSpace(b.AccountID) != ""
+	requestedAccount := firstNonEmpty(b.AccountID, b.User)
+	acc, err := s.resolveAccountCtx(r.Context(), requestedAccount)
+	if err != nil && !explicitAccount && requestedAccount != "" {
+		// The account came from the OpenAI `user` field rather than an explicit
+		// accountId; if it is unusable, fall back to a healthy account instead of
+		// failing every image request.
+		log.Printf("[account-route] image account %q unusable, re-routing: %v", requestedAccount, err)
+		acc, err = s.resolveAccountCtx(r.Context(), "")
+	}
 	if err != nil {
 		writeUpstreamError(w, err)
 		return
